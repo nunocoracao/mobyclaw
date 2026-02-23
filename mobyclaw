@@ -122,13 +122,15 @@ load_env_home() {
 # ─── Restart watcher ────────────────────────────────────
 
 # The restart watcher polls ~/.mobyclaw/.restart every 5 seconds.
-# When the agent writes to this file, the watcher restarts the
-# moby container so config changes (soul.yaml, etc.) take effect.
+# When the agent writes to this file, the watcher performs the
+# requested action so changes take effect.
 #
 # Signal file contents:
-#   "restart" — docker compose restart moby (~5s)
-#   "rebuild" — docker compose up -d --build moby (~30s)
-#   anything else — treated as "restart"
+#   "restart"          — docker compose restart moby (~5s)
+#   "rebuild"          — docker compose up -d --build moby (~30s)
+#   "rebuild-gateway"  — docker compose up -d --build gateway (~20s)
+#   "rebuild-all"      — docker compose up -d --build (~45s)
+#   anything else      — treated as "restart"
 
 restart_watcher() {
     while true; do
@@ -143,9 +145,19 @@ restart_watcher() {
 
             case "$action" in
                 rebuild)
-                    echo "[$timestamp] Rebuild requested by agent" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                    echo "[$timestamp] Rebuild moby requested by agent" >> "$MOBYCLAW_HOME/logs/watcher.log"
                     dc up -d --build moby >> "$MOBYCLAW_HOME/logs/watcher.log" 2>&1
-                    echo "[$timestamp] Rebuild complete" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                    echo "[$timestamp] Rebuild moby complete" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                    ;;
+                rebuild-gateway)
+                    echo "[$timestamp] Rebuild gateway requested by agent" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                    dc up -d --build gateway >> "$MOBYCLAW_HOME/logs/watcher.log" 2>&1
+                    echo "[$timestamp] Rebuild gateway complete" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                    ;;
+                rebuild-all)
+                    echo "[$timestamp] Rebuild all requested by agent" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                    dc up -d --build >> "$MOBYCLAW_HOME/logs/watcher.log" 2>&1
+                    echo "[$timestamp] Rebuild all complete" >> "$MOBYCLAW_HOME/logs/watcher.log"
                     ;;
                 *)
                     echo "[$timestamp] Restart requested by agent" >> "$MOBYCLAW_HOME/logs/watcher.log"
@@ -196,9 +208,19 @@ start_watcher() {
                     ts=$(date "+%Y-%m-%d %H:%M:%S")
                     case "$action" in
                         rebuild)
-                            echo "[$ts] Rebuild requested by agent" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                            echo "[$ts] Rebuild moby requested by agent" >> "$MOBYCLAW_HOME/logs/watcher.log"
                             dc up -d --build moby >> "$MOBYCLAW_HOME/logs/watcher.log" 2>&1
-                            echo "[$ts] Rebuild complete" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                            echo "[$ts] Rebuild moby complete" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                            ;;
+                        rebuild-gateway)
+                            echo "[$ts] Rebuild gateway requested by agent" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                            dc up -d --build gateway >> "$MOBYCLAW_HOME/logs/watcher.log" 2>&1
+                            echo "[$ts] Rebuild gateway complete" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                            ;;
+                        rebuild-all)
+                            echo "[$ts] Rebuild all requested by agent" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                            dc up -d --build >> "$MOBYCLAW_HOME/logs/watcher.log" 2>&1
+                            echo "[$ts] Rebuild all complete" >> "$MOBYCLAW_HOME/logs/watcher.log"
                             ;;
                         *)
                             echo "[$ts] Restart requested by agent" >> "$MOBYCLAW_HOME/logs/watcher.log"

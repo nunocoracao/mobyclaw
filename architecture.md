@@ -186,21 +186,29 @@ switch models, or adjust behavior based on user feedback.
 **Mechanism:** File-signal pattern.
 
 ```
-Agent edits ~/.mobyclaw/soul.yaml
+Agent edits files (soul.yaml, Dockerfile, gateway/src/*.js, etc.)
   │
-  ├─ echo "restart" > ~/.mobyclaw/.restart
+  ├─ echo "<signal>" > ~/.mobyclaw/.restart
   │
   ▼
 Host-side watcher (spawned by `mobyclaw up`)
   │
   ├─ Polls every 5 seconds
   ├─ Sees .restart file
-  ├─ Reads action: "restart" or "rebuild"
+  ├─ Reads signal
   ├─ Removes file
-  ├─ docker compose restart moby   (config changes, ~5s)
-  │   OR docker compose up --build  (package changes, ~30s)
+  ├─ Executes appropriate docker compose command
   └─ Logs to ~/.mobyclaw/logs/watcher.log
 ```
+
+**Signal types:**
+
+| Signal | Command | When to use |
+|---|---|---|
+| `restart` | `dc restart moby` | Config changes (soul.yaml) — ~5s |
+| `rebuild` | `dc up -d --build moby` | Moby Dockerfile/image changes — ~30s |
+| `rebuild-gateway` | `dc up -d --build gateway` | Gateway source code changes — ~20s |
+| `rebuild-all` | `dc up -d --build` | Multi-service changes — ~45s |
 
 **Why a file signal, not an API or Docker socket?**
 - No Docker socket inside containers (security)
@@ -208,6 +216,60 @@ Host-side watcher (spawned by `mobyclaw up`)
 - Works on any platform
 - The CLI already knows how to run docker compose
 - The file is in the bind-mounted directory — both host and container can see it
+
+### Source Code Access
+
+The mobyclaw project root is **bind-mounted at `/source`** in the moby
+container. This gives the agent read-write access to all project files:
+
+```
+/source/                          ← host's mobyclaw project root
+├── Dockerfile                    # Agent container image
+├── docker-compose.yml            # Service definitions
+├── mobyclaw                      # CLI bash script
+├── agents/moby/soul.yaml         # Default soul (master copy)
+├── gateway/
+│   ├── Dockerfile                # Gateway image
+│   ├── package.json              # Gateway dependencies
+│   └── src/
+│       ├── index.js              # Express app, endpoints
+│       ├── agent-client.js       # HTTP client for cagent
+│       ├── sessions.js           # Session store + queuing
+│       ├── scheduler.js          # Schedules + heartbeat
+│       ├── tool-labels.js        # Tool name formatting
+│       └── adapters/telegram.js  # Telegram adapter
+├── architecture.md               # Design documentation
+└── README.md                     # User docs
+```
+
+**What the agent can modify:**
+- `Dockerfile` — change its own image (install packages, etc.)
+- `gateway/src/*.js` — add features, fix bugs, add adapters
+- `gateway/Dockerfile` — change gateway image
+- `docker-compose.yml` — service config, volumes, networking
+- `mobyclaw` — CLI script (takes effect immediately, no rebuild)
+- `agents/moby/soul.yaml` — master copy (the runtime copy is at `~/.mobyclaw/`)
+- `architecture.md`, `README.md` — documentation
+
+**What the agent must NOT modify:**
+- `.env` — contains API keys and secrets
+- `.gitignore` — without explicit permission
+- `cagent` binary — pre-built, not modifiable
+
+**Why mount the source?**
+- The agent can improve itself beyond just personality tweaks
+- Gateway bugs can be fixed without user intervention
+- New features (adapters, API endpoints) can be added by the agent
+- Documentation can be kept in sync with actual behavior
+- Git provides safety net: `git stash`, `git checkout -- .`
+
+**Safety model:**
+- Agent must explain changes before making them
+- Agent must `git diff` to show what changed before triggering rebuild
+- Agent must ask permission before modifying code (unless explicitly asked)
+- Small, focused changes preferred (one concern per rebuild)
+- `node -c file.js` syntax check before rebuilding gateway
+- User can always revert: `cd ~/path/to/mobyclaw && git checkout -- .`
 
 **Watcher lifecycle:**
 - Spawned as a background process by `mobyclaw up`
@@ -1026,6 +1088,7 @@ turns. When the model calls a tool, the stream continues through:
 | Mount | Type | Container Path | Purpose |
 |---|---|---|---|
 | `~/.mobyclaw/` | Bind mount | `/home/agent/.mobyclaw` | All agent state: memory, soul, sessions, logs |
+| Project root (`.`) | Bind mount | `/source` | Full source code access (self-modification) |
 | Agent config | Bind mount (ro) | `/agent/` | Agent YAML (from repo) |
 
 **Key principle:** Everything lives at `~/.mobyclaw/` on the host. No Docker
@@ -1546,6 +1609,7 @@ Deliverables:
 | ADR-028 | TASKS.md as agent-managed task store (Markdown) | Flexible Markdown file. Agent writes entries via filesystem tools. `[scheduled]` marker prevents double-scheduling. Channel stored per-task. Heartbeat reviews it. Complements schedules.json (gateway-owned) — TASKS.md is the agent's view, schedules.json is the gateway's execution state. | 2026-02-23 |
 | ADR-029 | Channel context injected as message prefix by gateway | Gateway prepends `[context: channel=telegram:123, time=...]` to every user message. Only mechanism available since cagent API has no per-message metadata. Agent extracts channel for schedule creation. Never displayed to user. | 2026-02-23 |
 | ADR-030 | Last active channel for fallback delivery | Gateway tracks last messaging channel used. Fallback when heartbeat/agent needs to deliver without a specific channel target. Resets on restart (acceptable for personal agent). | 2026-02-23 |
+| ADR-031 | Source code mounted at `/source` for self-modification | Agent needs to modify its own Dockerfile, gateway source, compose config, CLI, and documentation. Bind-mounting the project root gives full read-write access. Safety via: git (revert), permission-before-modify policy, syntax checks before rebuild. Four signal types: `restart`, `rebuild`, `rebuild-gateway`, `rebuild-all`. | 2026-02-23 |
 
 ---
 

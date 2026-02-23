@@ -27,6 +27,9 @@ RUN mkdir -p /agent /workspace && chown agent:agent /workspace
 # Switch to non-root user
 USER agent
 
+# Allow git to work in bind-mounted directories (different owner)
+RUN git config --global --add safe.directory /source
+
 # Working directory for agent operations
 WORKDIR /workspace
 
