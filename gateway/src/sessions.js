@@ -14,6 +14,8 @@ class SessionStore {
   constructor() {
     // channelId -> { sessionId: string, busy: boolean }
     this.sessions = new Map();
+    // channelId -> { sessionId: string, busy: boolean }  (overflow)
+    this.overflow = new Map();
     // channelId -> [{ resolve, reject, message }]
     this.queues = new Map();
   }
@@ -64,6 +66,33 @@ class SessionStore {
    */
   count() {
     return this.sessions.size;
+  }
+
+  // ── Overflow sessions ───────────────────────────────────
+  // Used when primary is busy and a new message arrives.
+  // Gives the user a parallel "fresh Moby" to talk to.
+
+  getOverflowSessionId(channelId) {
+    const entry = this.overflow.get(channelId);
+    return entry ? entry.sessionId : null;
+  }
+
+  setOverflowSessionId(channelId, sessionId) {
+    this.overflow.set(channelId, { sessionId, busy: false });
+  }
+
+  isOverflowBusy(channelId) {
+    const entry = this.overflow.get(channelId);
+    return entry ? entry.busy : false;
+  }
+
+  setOverflowBusy(channelId, busy) {
+    const entry = this.overflow.get(channelId);
+    if (entry) entry.busy = busy;
+  }
+
+  clearOverflow(channelId) {
+    this.overflow.delete(channelId);
   }
 
   /**
