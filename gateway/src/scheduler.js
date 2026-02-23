@@ -29,8 +29,12 @@ class ScheduleStore {
     try {
       if (fs.existsSync(this.filePath)) {
         const raw = fs.readFileSync(this.filePath, "utf-8");
-        this.schedules = JSON.parse(raw);
-        console.log(`[scheduler] Loaded ${this.schedules.length} schedule(s) from ${this.filePath}`);
+        const all = JSON.parse(raw);
+        // Only keep pending entries — delivered/cancelled are dead weight
+        this.schedules = all.filter((s) => s.status === "pending");
+        const pruned = all.length - this.schedules.length;
+        console.log(`[scheduler] Loaded ${this.schedules.length} pending schedule(s) from ${this.filePath}${pruned > 0 ? ` (pruned ${pruned} old)` : ""}`);
+        if (pruned > 0) this._save();
       }
     } catch (err) {
       console.error(`[scheduler] Failed to load schedules: ${err.message}`);
@@ -75,17 +79,18 @@ class ScheduleStore {
   }
 
   cancel(id) {
-    const schedule = this.get(id);
-    if (!schedule) return null;
-    if (schedule.status !== "pending") return null;
+    const idx = this.schedules.findIndex((s) => s.id === id && s.status === "pending");
+    if (idx === -1) return null;
+    const [schedule] = this.schedules.splice(idx, 1);
     schedule.status = "cancelled";
     this._save();
     return schedule;
   }
 
   markDelivered(id) {
-    const schedule = this.get(id);
-    if (!schedule) return;
+    const idx = this.schedules.findIndex((s) => s.id === id);
+    if (idx === -1) return null;
+    const [schedule] = this.schedules.splice(idx, 1);
     schedule.status = "delivered";
     schedule.delivered_at = new Date().toISOString();
     this._save();
