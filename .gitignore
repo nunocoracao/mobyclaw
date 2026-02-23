@@ -1,0 +1,27 @@
+# Secrets — never commit
+.env
+
+# Generated — regenerated on every `mobyclaw up`
+docker-compose.override.yml
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+*.swo
+*~
+
+# Docker
+.docker/
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# Build artifacts
+cagent
+
+# Node
+node_modules/

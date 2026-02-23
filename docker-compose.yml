@@ -1,0 +1,53 @@
+# ─────────────────────────────────────────────────────────────
+# mobyclaw — Docker Compose stack
+#
+# Services:
+#   moby     — AI agent (cagent serve api)
+#   gateway  — Message routing (Telegram, etc.)
+#
+# Usage:
+#   mobyclaw up    — start everything
+#   mobyclaw down  — stop everything
+#   mobyclaw logs  — view logs
+# ─────────────────────────────────────────────────────────────
+
+services:
+  moby:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ${MOBYCLAW_HOME:-~/.mobyclaw}:/home/agent/.mobyclaw
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    restart: unless-stopped
+    networks:
+      - mobyclaw
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "1.0"
+
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - AGENT_URL=http://moby:8080
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - WHATSAPP_AUTH=${WHATSAPP_AUTH:-}
+    depends_on:
+      - moby
+    restart: unless-stopped
+    networks:
+      - mobyclaw
+
+networks:
+  mobyclaw:
+    driver: bridge

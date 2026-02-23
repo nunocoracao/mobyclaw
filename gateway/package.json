@@ -1,0 +1,14 @@
+{
+  "name": "mobyclaw-gateway",
+  "version": "0.1.0",
+  "description": "Mobyclaw gateway — message routing, sessions, and scheduling",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "express": "^4.21.0"
+  }
+}
