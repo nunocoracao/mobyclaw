@@ -6,9 +6,10 @@
 //   2. Scheduler loop: fires due schedules every 30s
 //   3. Heartbeat timer: wakes agent every HEARTBEAT_INTERVAL
 //
-// Schedules are pre-composed messages. The agent creates them via
-// the REST API (curl from inside the container). The gateway
-// delivers them at the right time — no agent involvement at fire time.
+// Two schedule types:
+//   - message: pre-composed text, delivered directly (no LLM)
+//   - prompt:  sent to the agent at fire time; agent's response
+//              is delivered to the channel (requires LLM call)
 // ─────────────────────────────────────────────────────────────
 
 const fs = require("fs");
@@ -47,11 +48,12 @@ class ScheduleStore {
     }
   }
 
-  create({ due, message, channel, repeat }) {
+  create({ due, message, prompt, channel, repeat }) {
     const schedule = {
       id: "sch_" + crypto.randomBytes(6).toString("hex"),
       due,
-      message,
+      message: message || null,
+      prompt: prompt || null,
       channel,
       status: "pending",
       repeat: repeat || null,
@@ -217,7 +219,7 @@ class AdapterRegistry {
 
 // ─── Scheduler (fires due schedules) ─────────────────────────
 
-function startSchedulerLoop(store, registry, intervalMs = 30_000) {
+function startSchedulerLoop(store, registry, sendPromptFn, intervalMs = 30_000) {
   console.log(`[scheduler] Loop started (every ${intervalMs / 1000}s)`);
 
   const timer = setInterval(async () => {
@@ -225,28 +227,45 @@ function startSchedulerLoop(store, registry, intervalMs = 30_000) {
     if (due.length === 0) return;
 
     for (const schedule of due) {
-      console.log(`[scheduler] Firing: ${schedule.id} → ${schedule.channel}`);
-      const ok = await registry.deliver(schedule.channel, schedule.message);
+      console.log(`[scheduler] Firing: ${schedule.id} → ${schedule.channel}${schedule.prompt ? " (prompt)" : ""}`);
+
+      let deliveryMessage = schedule.message;
+
+      // Prompt-based schedule: run the agent first, use its response
+      if (schedule.prompt) {
+        try {
+          const sessionId = `schedule:${schedule.id}`;
+          console.log(`[scheduler] Running agent prompt for ${schedule.id}...`);
+          const agentResponse = await sendPromptFn(sessionId, schedule.prompt);
+
+          if (agentResponse && agentResponse.trim().length > 0) {
+            deliveryMessage = agentResponse;
+            console.log(`[scheduler] Agent responded (${agentResponse.length} chars)`);
+          } else {
+            console.warn(`[scheduler] Agent returned empty response for ${schedule.id}`);
+            if (!deliveryMessage) {
+              console.warn(`[scheduler] No fallback message, skipping delivery`);
+              store.markDelivered(schedule.id);
+              handleRecurring(store, schedule);
+              continue;
+            }
+          }
+        } catch (err) {
+          console.error(`[scheduler] Agent prompt failed for ${schedule.id}: ${err.message}`);
+          if (!deliveryMessage) {
+            console.error(`[scheduler] No fallback, will retry next loop`);
+            continue;
+          }
+          console.log(`[scheduler] Falling back to pre-composed message`);
+        }
+      }
+
+      const ok = await registry.deliver(schedule.channel, deliveryMessage);
 
       if (ok) {
         store.markDelivered(schedule.id);
         console.log(`[scheduler] Delivered: ${schedule.id}`);
-
-        // Handle recurring — create next occurrence
-        if (schedule.repeat) {
-          const nextDue = computeNextOccurrence(schedule.due, schedule.repeat);
-          if (nextDue) {
-            const next = store.create({
-              due: nextDue,
-              message: schedule.message,
-              channel: schedule.channel,
-              repeat: schedule.repeat,
-            });
-            console.log(`[scheduler] Recurring: next fire ${next.id} at ${nextDue}`);
-          } else {
-            console.warn(`[scheduler] Could not compute next occurrence for repeat="${schedule.repeat}"`);
-          }
-        }
+        handleRecurring(store, schedule);
       } else {
         console.error(`[scheduler] Delivery failed for ${schedule.id}, will retry next loop`);
       }
@@ -255,6 +274,25 @@ function startSchedulerLoop(store, registry, intervalMs = 30_000) {
 
   return timer;
 }
+
+function handleRecurring(store, schedule) {
+  if (!schedule.repeat) return;
+
+  const nextDue = computeNextOccurrence(schedule.due, schedule.repeat);
+  if (nextDue) {
+    const next = store.create({
+      due: nextDue,
+      message: schedule.message,
+      prompt: schedule.prompt,
+      channel: schedule.channel,
+      repeat: schedule.repeat,
+    });
+    console.log(`[scheduler] Recurring: next ${next.id} at ${nextDue}`);
+  } else {
+    console.warn(`[scheduler] Could not compute next occurrence for repeat="${schedule.repeat}"`);
+  }
+}
+
 
 // ─── Heartbeat ───────────────────────────────────────────────
 

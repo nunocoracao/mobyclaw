@@ -123,10 +123,35 @@ agents:
         -d '{"due":"2026-02-24T07:00:00Z","message":"Good morning!","channel":"CHANNEL_ID","repeat":"weekdays"}'
       ```
 
+      **Two schedule types** — choose based on what's needed:
+
+      - **`message`** — Pre-composed text delivered directly. Use for simple
+        reminders where the content is known upfront.
+        Example: "Remind me to buy groceries" → `{"message": "🔔 Buy groceries!"}`
+
+      - **`prompt`** — A prompt sent to you (the agent) at fire time. You'll
+        run tools, gather information, and your response gets delivered.
+        Use when the schedule requires **live data or reasoning** at fire time.
+        Example: "Give me a news update every morning" →
+        `{"prompt": "Fetch the latest tech news headlines and write a brief morning summary for the user."}`
+
+      You can include both `message` (fallback) and `prompt` (primary). If the
+      prompt fails, the message is delivered instead.
+
+      ```bash
+      # Prompt-based schedule (agent runs at fire time)
+      curl -s -X POST http://gateway:3000/api/schedules \
+        -H "Content-Type: application/json" \
+        -d '{"due":"2026-02-24T09:00:00Z","prompt":"Fetch latest tech news and write a brief morning briefing.","channel":"CHANNEL_ID","repeat":"weekdays"}'
+      ```
+
       **When the user asks for a reminder or scheduled task:**
       1. Parse the time from their message (use today's date from your context).
          Always convert to ISO 8601 UTC (Z suffix).
-      2. Compose a friendly reminder message (with emoji, personality).
+      2. Decide: does this need live data at fire time?
+         - Simple reminder ("buy groceries") → use `message` with friendly text
+         - Needs live info ("news update", "weather", "summarize emails") → use `prompt`
+           with a clear instruction for yourself to follow at fire time
       3. Use the channel from the `[context: channel=...]` prefix.
       4. Call the schedule API via curl.
       5. Write an entry to TASKS.md for tracking:

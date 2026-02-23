@@ -631,6 +631,24 @@ use them.
 }
 ```
 
+Either `message` or `prompt` is required (or both):
+
+| Field | When to use | At fire time |
+|---|---|---|
+| `message` | Simple reminders (content known upfront) | Delivered directly (free, instant) |
+| `prompt` | Needs live data/reasoning (news, weather, summaries) | Sent to agent; agent’s response delivered |
+| Both | Prompt-based with fallback | Agent runs; if it fails, `message` is delivered |
+
+**Prompt-based example** (agent runs at fire time):
+```json
+{
+  "due": "2026-02-24T09:00:00Z",
+  "prompt": "Fetch the latest tech news and write a brief morning briefing.",
+  "channel": "telegram:123456",
+  "repeat": "weekdays"
+}
+```
+
 **Schedule object (stored):**
 ```json
 {

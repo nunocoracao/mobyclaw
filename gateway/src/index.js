@@ -173,12 +173,12 @@ async function main() {
 
   // ── Scheduler + Heartbeat ───────────────────────────────
 
-  startSchedulerLoop(scheduleStore, registry, 30_000);
-
-  const heartbeatSendFn = async (channelId, prompt) => {
+  const agentPromptFn = async (channelId, prompt) => {
     return sendToAgent(agent, sessions, channelId, prompt);
   };
-  startHeartbeat(heartbeatSendFn);
+
+  startSchedulerLoop(scheduleStore, registry, agentPromptFn, 30_000);
+  startHeartbeat(agentPromptFn);
 
   const app = express();
   app.use(express.json());
@@ -202,16 +202,19 @@ async function main() {
   });
 
   app.post("/api/schedules", (req, res) => {
-    const { due, message, channel, repeat } = req.body;
-    if (!due || !message) {
-      return res.status(400).json({ error: "due and message are required" });
+    const { due, message, prompt, channel, repeat } = req.body;
+    if (!due) {
+      return res.status(400).json({ error: "due is required" });
+    }
+    if (!message && !prompt) {
+      return res.status(400).json({ error: "message or prompt is required" });
     }
     // Default channel to last active if not provided
     const targetChannel = channel || getLastActiveChannel();
     if (!targetChannel) {
       return res.status(400).json({ error: "channel is required (no last active channel available)" });
     }
-    const schedule = scheduleStore.create({ due, message, channel: targetChannel, repeat });
+    const schedule = scheduleStore.create({ due, message, prompt, channel: targetChannel, repeat });
     console.log(`[schedule] Created: ${schedule.id} → ${schedule.channel} at ${schedule.due}${schedule.repeat ? ` (repeat: ${schedule.repeat})` : ""}`);
     res.status(201).json(schedule);
   });
