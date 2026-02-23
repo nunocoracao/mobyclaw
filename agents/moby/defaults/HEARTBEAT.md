@@ -11,7 +11,7 @@
 
 ## Daily (once per day)
 
-- [ ] Write a brief summary of the day to today's daily log
+- [ ] Write a brief summary of the day to today's memory daily log
 
 ## Custom Checks
 

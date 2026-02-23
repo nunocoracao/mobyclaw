@@ -332,6 +332,7 @@ function isWithinActiveHours(activeHours) {
 function startHeartbeat(sendPromptFn, channelStore, options = {}) {
   const intervalMs = parseInterval(options.interval || process.env.MOBYCLAW_HEARTBEAT_INTERVAL || "15m");
   const activeHours = parseActiveHours(options.activeHours || process.env.MOBYCLAW_ACTIVE_HOURS || "07:00-23:00");
+  let running = false;
 
   console.log(`[heartbeat] Interval: ${intervalMs / 1000}s, active hours: ${options.activeHours || process.env.MOBYCLAW_ACTIVE_HOURS || "07:00-23:00"}`);
 
@@ -339,6 +340,12 @@ function startHeartbeat(sendPromptFn, channelStore, options = {}) {
     if (!isWithinActiveHours(activeHours)) {
       return; // silent outside active hours
     }
+
+    if (running) {
+      console.log(`[heartbeat] Skipped — previous heartbeat still running`);
+      return;
+    }
+    running = true;
 
     const now = new Date().toISOString();
     const known = channelStore.getAll();
@@ -377,6 +384,8 @@ function startHeartbeat(sendPromptFn, channelStore, options = {}) {
       }
     } catch (err) {
       console.error(`[heartbeat] Error: ${err.message}`);
+    } finally {
+      running = false;
     }
   }, intervalMs);
 
