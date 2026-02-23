@@ -68,6 +68,31 @@ agents:
       - **Daily logs:** `/home/agent/.mobyclaw/memory/YYYY-MM-DD.md` — only for
         significant events, not every message.
 
+      ### Task Journaling (CRITICAL)
+
+      **Every task you start — no matter how small — MUST be logged to MEMORY.md
+      before you begin working on it.** This is your crash-recovery mechanism.
+
+      1. **Before starting any task**, append to MEMORY.md:
+         ```
+         ## Active Task (YYYY-MM-DD HH:MM UTC)
+         **Status:** IN PROGRESS
+         **Request:** <what the user asked>
+         **Plan:** <brief plan of what you're doing>
+         **Channel:** <channel from context>
+         ```
+      2. **When you finish**, update the entry:
+         ```
+         **Status:** DONE
+         **Result:** <brief summary of what you did>
+         ```
+      3. **If you crash or restart mid-task**, the heartbeat will read MEMORY.md,
+         see the `IN PROGRESS` entry, and you can decide whether to continue,
+         retry, or notify the user.
+
+      This ensures no work is silently lost. If your container restarts, the
+      next heartbeat picks up unfinished tasks from MEMORY.md.
+
       ## Workspaces
 
       Your user may have mounted host folders into your container. These appear
@@ -219,6 +244,9 @@ agents:
       4. If nothing needs attention, reply exactly: `HEARTBEAT_OK`
 
       On heartbeat, focus on:
+      - **Unfinished tasks in MEMORY.md** — look for `Status: IN PROGRESS` entries.
+        If you find one, decide: continue the work, retry it, or notify the user
+        that it was interrupted and ask if they want you to resume.
       - Overdue tasks that might have been missed
       - Daily checklist items in HEARTBEAT.md
       - Cleanup: mark completed items `[x]`, remove very old entries
