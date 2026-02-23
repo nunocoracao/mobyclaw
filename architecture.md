@@ -177,6 +177,49 @@ A session is a conversation thread with history. Sessions are:
 - **Persistent**: stored on disk, survive container restarts
 - **Compactable**: old context gets summarized to stay within model limits
 
+### 2.9 Self-Modification
+
+Moby can **modify its own configuration** and trigger a restart to load
+the changes. This enables the agent to evolve its own personality,
+switch models, or adjust behavior based on user feedback.
+
+**Mechanism:** File-signal pattern.
+
+```
+Agent edits ~/.mobyclaw/soul.yaml
+  │
+  ├─ echo "restart" > ~/.mobyclaw/.restart
+  │
+  ▼
+Host-side watcher (spawned by `mobyclaw up`)
+  │
+  ├─ Polls every 5 seconds
+  ├─ Sees .restart file
+  ├─ Reads action: "restart" or "rebuild"
+  ├─ Removes file
+  ├─ docker compose restart moby   (config changes, ~5s)
+  │   OR docker compose up --build  (package changes, ~30s)
+  └─ Logs to ~/.mobyclaw/logs/watcher.log
+```
+
+**Why a file signal, not an API or Docker socket?**
+- No Docker socket inside containers (security)
+- No new dependencies (just a file + poll loop)
+- Works on any platform
+- The CLI already knows how to run docker compose
+- The file is in the bind-mounted directory — both host and container can see it
+
+**Watcher lifecycle:**
+- Spawned as a background process by `mobyclaw up`
+- PID stored in `~/.mobyclaw/.watcher.pid`
+- Killed by `mobyclaw down`
+- Idempotent — `mobyclaw up` kills any existing watcher before spawning a new one
+
+**cagent does NOT hot-reload soul.yaml.** Confirmed by testing: the instruction
+is read once at process start. A container restart is required for config
+changes to take effect. Memory files (MEMORY.md, TASKS.md) are unaffected
+by restarts since they're bind-mounted from the host.
+
 ---
 
 ## 3. Architecture Overview

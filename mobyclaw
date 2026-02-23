@@ -14,6 +14,8 @@ ENV_FILE="$SCRIPT_DIR/.env"
 
 CREDENTIALS_FILE="$MOBYCLAW_HOME/credentials.env"
 WORKSPACES_FILE="$MOBYCLAW_HOME/workspaces.conf"
+RESTART_SIGNAL="$MOBYCLAW_HOME/.restart"
+WATCHER_PID_FILE="$MOBYCLAW_HOME/.watcher.pid"
 
 # ─── Colors & formatting ─────────────────────────────────────
 RED='\033[0;31m'
@@ -111,7 +113,124 @@ load_env_home() {
             MOBYCLAW_HOME="$env_home"
             CREDENTIALS_FILE="$MOBYCLAW_HOME/credentials.env"
             WORKSPACES_FILE="$MOBYCLAW_HOME/workspaces.conf"
+            RESTART_SIGNAL="$MOBYCLAW_HOME/.restart"
+            WATCHER_PID_FILE="$MOBYCLAW_HOME/.watcher.pid"
         fi
+    fi
+}
+
+# ─── Restart watcher ────────────────────────────────────
+
+# The restart watcher polls ~/.mobyclaw/.restart every 5 seconds.
+# When the agent writes to this file, the watcher restarts the
+# moby container so config changes (soul.yaml, etc.) take effect.
+#
+# Signal file contents:
+#   "restart" — docker compose restart moby (~5s)
+#   "rebuild" — docker compose up -d --build moby (~30s)
+#   anything else — treated as "restart"
+
+restart_watcher() {
+    while true; do
+        sleep 5
+        if [[ -f "$RESTART_SIGNAL" ]]; then
+            local action
+            action=$(cat "$RESTART_SIGNAL" 2>/dev/null | head -1 | tr -d '[:space:]')
+            rm -f "$RESTART_SIGNAL"
+
+            local timestamp
+            timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+            case "$action" in
+                rebuild)
+                    echo "[$timestamp] Rebuild requested by agent" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                    dc up -d --build moby >> "$MOBYCLAW_HOME/logs/watcher.log" 2>&1
+                    echo "[$timestamp] Rebuild complete" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                    ;;
+                *)
+                    echo "[$timestamp] Restart requested by agent" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                    dc restart moby >> "$MOBYCLAW_HOME/logs/watcher.log" 2>&1
+                    echo "[$timestamp] Restart complete" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                    ;;
+            esac
+        fi
+    done
+}
+
+start_watcher() {
+    # Kill any existing watcher
+    stop_watcher 2>/dev/null || true
+
+    # Ensure log directory exists
+    mkdir -p "$MOBYCLAW_HOME/logs"
+
+    # Clean up stale signal file
+    rm -f "$RESTART_SIGNAL"
+
+    # Start watcher as a fully detached background process.
+    # We launch it via nohup in a subshell so it survives the
+    # parent shell exiting. stdin/stdout/stderr are redirected
+    # to prevent any terminal attachment.
+    (
+        nohup bash -c '
+            COMPOSE_FILE="'"$COMPOSE_FILE"'"
+            OVERRIDE_FILE="'"$OVERRIDE_FILE"'"
+            ENV_FILE="'"$ENV_FILE"'"
+            RESTART_SIGNAL="'"$RESTART_SIGNAL"'"
+            MOBYCLAW_HOME="'"$MOBYCLAW_HOME"'"
+
+            dc() {
+                local args=(-f "$COMPOSE_FILE")
+                if [[ -f "$OVERRIDE_FILE" ]]; then
+                    args+=(-f "$OVERRIDE_FILE")
+                fi
+                args+=(--env-file "$ENV_FILE")
+                docker compose "${args[@]}" "$@"
+            }
+
+            while true; do
+                sleep 5
+                if [[ -f "$RESTART_SIGNAL" ]]; then
+                    action=$(head -1 "$RESTART_SIGNAL" 2>/dev/null | tr -d "[:space:]")
+                    rm -f "$RESTART_SIGNAL"
+                    ts=$(date "+%Y-%m-%d %H:%M:%S")
+                    case "$action" in
+                        rebuild)
+                            echo "[$ts] Rebuild requested by agent" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                            dc up -d --build moby >> "$MOBYCLAW_HOME/logs/watcher.log" 2>&1
+                            echo "[$ts] Rebuild complete" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                            ;;
+                        *)
+                            echo "[$ts] Restart requested by agent" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                            dc restart moby >> "$MOBYCLAW_HOME/logs/watcher.log" 2>&1
+                            echo "[$ts] Restart complete" >> "$MOBYCLAW_HOME/logs/watcher.log"
+                            ;;
+                    esac
+                fi
+            done
+        ' </dev/null >/dev/null 2>&1 &
+        echo $! > "$WATCHER_PID_FILE"
+    )
+}
+
+stop_watcher() {
+    if [[ -f "$WATCHER_PID_FILE" ]]; then
+        local pid
+        pid=$(cat "$WATCHER_PID_FILE" 2>/dev/null)
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+        fi
+        rm -f "$WATCHER_PID_FILE"
+    fi
+}
+
+is_watcher_running() {
+    if [[ -f "$WATCHER_PID_FILE" ]]; then
+        local pid
+        pid=$(cat "$WATCHER_PID_FILE" 2>/dev/null)
+        [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+    else
+        return 1
     fi
 }
 
@@ -745,8 +864,15 @@ cmd_up() {
 
     info "Building and launching containers..."
     dc up -d --build
+
+    # Start the restart watcher (background process on host)
+    start_watcher
+
     echo ""
     success "Moby is running!"
+    if is_watcher_running; then
+        dim "  Restart watcher active (self-modification enabled)"
+    fi
     echo ""
     echo -e "  ${BOLD}What now:${NC}"
     echo -e "    ${GREEN}mobyclaw run \"Hello!\"${NC}   — Send a message"
@@ -758,6 +884,7 @@ cmd_up() {
 
 cmd_down() {
     info "Stopping mobyclaw..."
+    stop_watcher
     dc down
     success "Stopped."
 }
@@ -792,6 +919,13 @@ cmd_status() {
         fi
     else
         warn "Gateway: not responding (may still be starting)"
+    fi
+
+    # Show watcher status
+    if is_watcher_running; then
+        success "Restart watcher: active"
+    else
+        warn "Restart watcher: not running (self-modification disabled)"
     fi
 
     # Show workspaces
