@@ -14,11 +14,10 @@ const { SessionStore } = require("./sessions");
 const { formatToolLabel } = require("./tool-labels");
 const {
   ScheduleStore,
+  ChannelStore,
   AdapterRegistry,
   startSchedulerLoop,
   startHeartbeat,
-  setLastActiveChannel,
-  getLastActiveChannel,
 } = require("./scheduler");
 const path = require("path");
 
@@ -136,6 +135,10 @@ async function main() {
   const sessions = new SessionStore();
   const registry = new AdapterRegistry();
 
+  // Channel store — persists known channels to ~/.mobyclaw/channels.json
+  const channelsPath = path.join(MOBYCLAW_HOME, "channels.json");
+  const channelStore = new ChannelStore(channelsPath);
+
   // Schedule store — persists to ~/.mobyclaw/schedules.json
   const schedulesPath = path.join(MOBYCLAW_HOME, "schedules.json");
   const scheduleStore = new ScheduleStore(schedulesPath);
@@ -151,12 +154,20 @@ async function main() {
       return message;
     }
     const now = new Date().toISOString();
-    return `[context: channel=${channelId}, time=${now}]\n${message}`;
+    const defaultCh = channelStore.getDefault();
+    // Include the default channel so the agent can use it for schedules
+    // without needing to parse the channel from every message
+    let ctx = `[context: channel=${channelId}, time=${now}`;
+    if (defaultCh && defaultCh !== channelId) {
+      ctx += `, default_channel=${defaultCh}`;
+    }
+    ctx += `]`;
+    return `${ctx}\n${message}`;
   }
 
   // Wrapped version of sendToAgentStream that adds channel context
   async function sendToAgentStreamWithContext(agentArg, sessionsArg, channelId, message, callbacks) {
-    setLastActiveChannel(channelId);
+    channelStore.track(channelId);
     const enriched = addChannelContext(channelId, message);
     return sendToAgentStream(agentArg, sessionsArg, channelId, enriched, callbacks);
   }
@@ -178,7 +189,7 @@ async function main() {
   };
 
   startSchedulerLoop(scheduleStore, registry, agentPromptFn, 30_000);
-  startHeartbeat(agentPromptFn);
+  startHeartbeat(agentPromptFn, channelStore);
 
   const app = express();
   app.use(express.json());
@@ -191,7 +202,17 @@ async function main() {
     if (process.env.DISCORD_BOT_TOKEN) channels.push("discord");
     if (process.env.SLACK_BOT_TOKEN) channels.push("slack");
     const pending = scheduleStore.list("pending").length;
-    res.json({ status: "running", agent_url: AGENT_URL, channels, sessions: sessions.count(), schedules_pending: pending, uptime: process.uptime() });
+    const knownChannels = channelStore.getAll();
+    res.json({ status: "running", agent_url: AGENT_URL, channels, known_channels: knownChannels, sessions: sessions.count(), schedules_pending: pending, uptime: process.uptime() });
+  });
+
+  // ── Channel API ─────────────────────────────────────────
+
+  app.get("/api/channels", (_req, res) => {
+    res.json({
+      channels: channelStore.getAll(),
+      default: channelStore.getDefault(),
+    });
   });
 
   // ── Schedule API ───────────────────────────────────────
@@ -210,9 +231,9 @@ async function main() {
       return res.status(400).json({ error: "message or prompt is required" });
     }
     // Default channel to last active if not provided
-    const targetChannel = channel || getLastActiveChannel();
+    const targetChannel = channel || channelStore.getDefault();
     if (!targetChannel) {
-      return res.status(400).json({ error: "channel is required (no last active channel available)" });
+      return res.status(400).json({ error: "channel is required (no known channels available)" });
     }
     const schedule = scheduleStore.create({ due, message, prompt, channel: targetChannel, repeat });
     console.log(`[schedule] Created: ${schedule.id} → ${schedule.channel} at ${schedule.due}${schedule.repeat ? ` (repeat: ${schedule.repeat})` : ""}`);

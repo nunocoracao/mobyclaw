@@ -324,7 +324,7 @@ function isWithinActiveHours(activeHours) {
   return hour >= activeHours.start && hour < activeHours.end;
 }
 
-function startHeartbeat(sendPromptFn, options = {}) {
+function startHeartbeat(sendPromptFn, channelStore, options = {}) {
   const intervalMs = parseInterval(options.interval || process.env.MOBYCLAW_HEARTBEAT_INTERVAL || "15m");
   const activeHours = parseActiveHours(options.activeHours || process.env.MOBYCLAW_ACTIVE_HOURS || "07:00-23:00");
 
@@ -336,15 +336,28 @@ function startHeartbeat(sendPromptFn, options = {}) {
     }
 
     const now = new Date().toISOString();
+    const known = channelStore.getAll();
+    const defaultChannel = channelStore.getDefault();
+
+    // Build channels section for the prompt
+    let channelInfo = "";
+    if (Object.keys(known).length > 0) {
+      const entries = Object.entries(known).map(([p, ch]) => `  - ${p}: ${ch}`).join("\n");
+      channelInfo = `\nKnown channels:\n${entries}\nDefault channel: ${defaultChannel}\n`;
+    } else {
+      channelInfo = "\nNo known channels yet (no messages received from any platform).\n";
+    }
+
     const prompt =
       `[HEARTBEAT | time=${now}]\n` +
-      `You are being woken by a scheduled heartbeat.\n\n` +
+      `You are being woken by a scheduled heartbeat.\n` +
+      channelInfo + `\n` +
       `1. Read /home/agent/.mobyclaw/TASKS.md — review your task list, note anything relevant\n` +
       `2. Read /home/agent/.mobyclaw/HEARTBEAT.md — follow the checklist\n` +
       `3. If you need to notify the user about something, use:\n` +
       `   curl -s -X POST http://gateway:3000/api/deliver \\\n` +
       `     -H "Content-Type: application/json" \\\n` +
-      `     -d '{"channel": "CHANNEL_ID", "message": "YOUR MESSAGE"}'\n` +
+      `     -d '{"channel": "${defaultChannel || "CHANNEL_ID"}", "message": "YOUR MESSAGE"}'\n` +
       `4. If nothing needs attention, reply exactly: HEARTBEAT_OK`;
 
     console.log(`[heartbeat] Sending heartbeat prompt...`);
@@ -365,30 +378,103 @@ function startHeartbeat(sendPromptFn, options = {}) {
   return timer;
 }
 
-// ─── Last Active Channel ─────────────────────────────────────
+// ─── Channel Store ───────────────────────────────────────────
+//
+// Persists known messaging channels to channels.json.
+// When a user first messages from Telegram (or any platform),
+// the gateway saves that channel. This means:
+//   - Schedules can default to the user's known channel
+//   - Heartbeat knows where to deliver notifications
+//   - Survives gateway restarts (file-based)
+//   - Agent can read the file directly
+//
 
-let lastActiveChannel = null;
-
-function setLastActiveChannel(channel) {
-  // Only track messaging channels, not CLI/API
-  if (channel && !channel.startsWith("api:") && !channel.startsWith("cli:")) {
-    lastActiveChannel = channel;
+class ChannelStore {
+  constructor(filePath) {
+    this.filePath = filePath;
+    this.channels = {};       // platform → channel string, e.g. { telegram: "telegram:123" }
+    this.lastActive = null;   // most recent messaging channel (in-memory)
+    this._load();
   }
-}
 
-function getLastActiveChannel() {
-  return lastActiveChannel;
+  _load() {
+    try {
+      if (fs.existsSync(this.filePath)) {
+        const raw = fs.readFileSync(this.filePath, "utf-8");
+        this.channels = JSON.parse(raw);
+        console.log(`[channels] Loaded known channels:`, Object.keys(this.channels).join(", ") || "(none)");
+      }
+    } catch (err) {
+      console.error(`[channels] Failed to load: ${err.message}`);
+      this.channels = {};
+    }
+  }
+
+  _save() {
+    try {
+      const dir = path.dirname(this.filePath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(this.filePath, JSON.stringify(this.channels, null, 2) + "\n");
+    } catch (err) {
+      console.error(`[channels] Failed to save: ${err.message}`);
+    }
+  }
+
+  /**
+   * Record a channel from an incoming message.
+   * Only tracks real messaging channels (not api:, cli:, heartbeat:, schedule:).
+   * For each platform, stores the FIRST channel seen — since this is a personal
+   * agent, there's typically one chat per platform.
+   */
+  track(channelId) {
+    if (!channelId) return;
+    // Skip non-messaging channels
+    if (/^(api|cli|heartbeat|schedule):/.test(channelId)) return;
+
+    this.lastActive = channelId;
+
+    const colonIdx = channelId.indexOf(":");
+    if (colonIdx === -1) return;
+    const platform = channelId.substring(0, colonIdx);
+
+    if (!this.channels[platform]) {
+      this.channels[platform] = channelId;
+      this._save();
+      console.log(`[channels] Saved new channel: ${platform} → ${channelId}`);
+    } else if (this.channels[platform] !== channelId) {
+      // Update if different chat (user switched groups, etc.)
+      this.channels[platform] = channelId;
+      this._save();
+      console.log(`[channels] Updated channel: ${platform} → ${channelId}`);
+    }
+  }
+
+  /** Get channel for a specific platform, e.g. "telegram" → "telegram:12345" */
+  get(platform) {
+    return this.channels[platform] || null;
+  }
+
+  /** Get all known channels as { platform: channelId } */
+  getAll() {
+    return { ...this.channels };
+  }
+
+  /** Get the best delivery channel — last active, or first known */
+  getDefault() {
+    if (this.lastActive) return this.lastActive;
+    const keys = Object.keys(this.channels);
+    return keys.length > 0 ? this.channels[keys[0]] : null;
+  }
 }
 
 // ─── Exports ─────────────────────────────────────────────────
 
 module.exports = {
   ScheduleStore,
+  ChannelStore,
   AdapterRegistry,
   startSchedulerLoop,
   startHeartbeat,
   parseInterval,
   parseActiveHours,
-  setLastActiveChannel,
-  getLastActiveChannel,
 };

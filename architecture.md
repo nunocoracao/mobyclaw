@@ -113,6 +113,7 @@ volumes. This makes it visible, editable, and portable.
 ├── TASKS.md             # Agent's task/reminder list
 ├── HEARTBEAT.md         # Heartbeat checklist
 ├── schedules.json       # Scheduled reminders (gateway-managed)
+├── channels.json        # Known messaging channels (gateway-managed)
 ├── credentials.env      # Service credentials (GH_TOKEN, AWS keys, etc.)
 ├── workspaces.conf      # Workspace folder mappings (name=path)
 ├── memory/              # Daily logs
@@ -534,6 +535,7 @@ default `agents/moby/soul.yaml` to `~/.mobyclaw/soul.yaml` as a starting point.
 ├── TASKS.md            # Agent's task/reminder list
 ├── HEARTBEAT.md        # Heartbeat checklist
 ├── schedules.json      # Scheduled reminders (gateway-managed)
+├── channels.json       # Known messaging channels (gateway-managed)
 ├── credentials.env     # Service credentials (GH_TOKEN, etc.)
 ├── workspaces.conf     # Workspace folder mappings
 ├── memory/
@@ -993,16 +995,42 @@ agent uses to track reminders, todos, and recurring tasks.
 - Todos without times — just tracked, agent mentions in heartbeat if relevant
 - Agent marks `[x]` when done, may clean up old entries
 
-### 6.10 Last Active Channel
+### 6.10 Known Channels (Persistent)
 
-The gateway tracks the **last messaging channel** the user interacted with.
-This is used as the default target when:
-- The heartbeat needs to notify the user about something general
-- A schedule was created without an explicit channel
+The gateway persists **known messaging channels** to
+`~/.mobyclaw/channels.json`. When the first message arrives from any
+messaging platform, the gateway saves that channel. This means:
 
-Stored in memory (resets on gateway restart). Updated whenever a message
-arrives from any messaging adapter (Telegram, Discord, etc.). CLI/API
-channels do NOT update last active (they're ephemeral).
+- **Schedules** can omit the `channel` field — the gateway defaults to
+  the known channel for that platform
+- **Heartbeat** includes known channels and the default channel in its
+  prompt, so the agent knows where to deliver notifications
+- **Survives restarts** — the file is on the bind-mounted host filesystem
+- **Agent can read it** directly at `/home/agent/.mobyclaw/channels.json`
+  or query `GET /api/channels`
+
+**File format** (`~/.mobyclaw/channels.json`):
+```json
+{
+  "telegram": "telegram:1436415037",
+  "discord": "discord:9876543210"
+}
+```
+
+One entry per platform. For a personal agent, there's typically one chat
+per platform (your DM with the bot). If the user messages from a different
+chat on the same platform, the channel is updated.
+
+**API endpoint:**
+```
+GET /api/channels
+→ { "channels": { "telegram": "telegram:123" }, "default": "telegram:123" }
+```
+
+**Default channel resolution** (used by schedule API and heartbeat):
+1. Last active channel in current session (in-memory)
+2. First known channel from `channels.json`
+3. `null` (schedule API returns 400, heartbeat skips delivery)
 
 ---
 

@@ -152,14 +152,18 @@ agents:
          - Simple reminder ("buy groceries") → use `message` with friendly text
          - Needs live info ("news update", "weather", "summarize emails") → use `prompt`
            with a clear instruction for yourself to follow at fire time
-      3. Use the channel from the `[context: channel=...]` prefix.
+      3. For the channel: use the `channel` from the `[context: channel=...]` prefix.
+         **If no channel context is available** (e.g., from CLI), you can omit the
+         `channel` field — the gateway will use the default known channel.
+         To check known channels: `curl -s http://gateway:3000/api/channels`
       4. Call the schedule API via curl.
       5. Write an entry to TASKS.md for tracking:
          `- [ ] YYYY-MM-DD HH:MM — Description (channel:ID) [scheduled]`
       6. Confirm to the user: what, when, where.
 
-      **If the user doesn't specify a channel** (e.g., CLI), ask them which
-      channel they'd like the reminder delivered to.
+      **If the user doesn't specify a channel** (e.g., CLI), the gateway will
+      use the default known channel automatically. You don't need to ask the user
+      — just omit the `channel` field from the schedule API call.
 
       ## Tasks
 
@@ -187,16 +191,30 @@ agents:
       - **Never display** the context line to the user
       - The context is invisible to the user — treat it as internal metadata
 
+      ## Known Channels
+
+      The gateway remembers which messaging channels the user has talked to you
+      from. This is saved in `~/.mobyclaw/channels.json` and persists across
+      restarts.
+
+      - **Query known channels:** `curl -s http://gateway:3000/api/channels`
+      - **For schedules:** If you omit the `channel` field, the gateway uses
+        the default known channel automatically.
+      - **For heartbeat:** The heartbeat prompt includes known channels and the
+        default channel — use it for `/api/deliver` calls.
+      - You can also read `/home/agent/.mobyclaw/channels.json` directly.
+
       ## Heartbeat
 
       When woken by heartbeat (you'll see `[HEARTBEAT | time=...]`):
       1. Read `/home/agent/.mobyclaw/TASKS.md` — review open tasks
       2. Read `/home/agent/.mobyclaw/HEARTBEAT.md` — follow the checklist
-      3. If you need to notify the user about something, deliver via:
+      3. The heartbeat prompt includes **known channels** and a **default channel**.
+         Use the default channel when delivering notifications:
          ```bash
          curl -s -X POST http://gateway:3000/api/deliver \
            -H "Content-Type: application/json" \
-           -d '{"channel":"CHANNEL_ID","message":"YOUR MESSAGE"}'
+           -d '{"channel":"DEFAULT_CHANNEL","message":"YOUR MESSAGE"}'
          ```
       4. If nothing needs attention, reply exactly: `HEARTBEAT_OK`
 
