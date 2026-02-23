@@ -80,6 +80,16 @@ ask_secret() {
     echo ""
 }
 
+# Run docker compose with the right files (includes override when present)
+dc() {
+    local args=(-f "$COMPOSE_FILE")
+    if [[ -f "$OVERRIDE_FILE" ]]; then
+        args+=(-f "$OVERRIDE_FILE")
+    fi
+    args+=(--env-file "$ENV_FILE")
+    docker compose "${args[@]}" "$@"
+}
+
 # Resolve a path: expand ~ and make absolute
 resolve_path() {
     local p="$1"
@@ -734,7 +744,7 @@ cmd_up() {
     fi
 
     info "Building and launching containers..."
-    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build
+    dc up -d --build
     echo ""
     success "Moby is running!"
     echo ""
@@ -748,16 +758,16 @@ cmd_up() {
 
 cmd_down() {
     info "Stopping mobyclaw..."
-    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" down
+    dc down
     success "Stopped."
 }
 
 cmd_logs() {
     local service="${1:-}"
     if [[ -n "$service" ]]; then
-        docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" logs -f "$service"
+        dc logs -f "$service"
     else
-        docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" logs -f
+        dc logs -f
     fi
 }
 
@@ -765,7 +775,7 @@ cmd_status() {
     echo ""
     echo -e "${BOLD}mobyclaw status${NC}"
     echo ""
-    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
+    dc ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
     echo ""
 
     if curl -sf http://localhost:3000/health &>/dev/null 2>&1; then
@@ -846,7 +856,7 @@ cmd_chat() {
 }
 
 cmd_exec() {
-    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec moby /bin/bash
+    dc exec moby /bin/bash
 }
 
 # ─── Workspace subcommands ────────────────────────────────────
