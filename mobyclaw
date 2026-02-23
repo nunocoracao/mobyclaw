@@ -1018,6 +1018,37 @@ workspace_remove() {
     echo ""
 }
 
+# ─── Schedules command ─────────────────────────────────
+
+cmd_schedules() {
+    if ! curl -sf http://localhost:3000/health &>/dev/null 2>&1; then
+        error "Moby is not running. Start with: ${BOLD}mobyclaw up${NC}"
+        exit 1
+    fi
+
+    echo ""
+    echo -e "${BOLD}Scheduled reminders${NC}"
+    echo ""
+
+    local schedules
+    schedules=$(curl -s "http://localhost:3000/api/schedules?status=pending" 2>/dev/null)
+
+    local count
+    count=$(echo "$schedules" | jq 'length' 2>/dev/null || echo "0")
+
+    if [[ "$count" == "0" ]]; then
+        dim "  No pending schedules."
+        dim "  Ask Moby to set a reminder: mobyclaw run \"Remind me tomorrow at 9am to...\""
+        echo ""
+        return 0
+    fi
+
+    echo "$schedules" | jq -r '.[] | "  \(.due)  \(.channel)\n    \(.message)\n    id: \(.id)  repeat: \(.repeat // "one-shot")\n"' 2>/dev/null
+
+    dim "  $count pending schedule(s)"
+    echo ""
+}
+
 # ─── Help & version ──────────────────────────────────────────
 
 cmd_help() {
@@ -1036,6 +1067,7 @@ cmd_help() {
     echo -e "  ${GREEN}workspace list${NC}                Show mounted workspaces"
     echo -e "  ${GREEN}workspace add${NC} <path> [name]   Mount a host folder"
     echo -e "  ${GREEN}workspace remove${NC} <name>       Unmount a folder"
+    echo -e "  ${GREEN}schedules${NC}                     Show upcoming schedules"
     echo -e "  ${GREEN}help${NC}                          Show this help"
     echo -e "  ${GREEN}version${NC}                       Show version"
     echo ""
@@ -1073,6 +1105,7 @@ main() {
         chat)      cmd_chat "$@" ;;
         exec)      cmd_exec "$@" ;;
         workspace) cmd_workspace "$@" ;;
+        schedules) cmd_schedules "$@" ;;
         help|-h|--help)       cmd_help "$@" ;;
         version|-v|--version) cmd_version "$@" ;;
         *)

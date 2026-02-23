@@ -12,9 +12,19 @@ const { setupTelegram } = require("./adapters/telegram");
 const { AgentClient } = require("./agent-client");
 const { SessionStore } = require("./sessions");
 const { formatToolLabel } = require("./tool-labels");
+const {
+  ScheduleStore,
+  AdapterRegistry,
+  startSchedulerLoop,
+  startHeartbeat,
+  setLastActiveChannel,
+  getLastActiveChannel,
+} = require("./scheduler");
+const path = require("path");
 
 const AGENT_URL = process.env.AGENT_URL || "http://moby:8080";
 const PORT = process.env.PORT || 3000;
+const MOBYCLAW_HOME = process.env.MOBYCLAW_HOME || "/data/.mobyclaw";
 
 process.on("uncaughtException", (err) => {
   console.error("Uncaught exception (not crashing):", err.message);
@@ -124,17 +134,51 @@ async function main() {
 
   const agent = new AgentClient(AGENT_URL);
   const sessions = new SessionStore();
+  const registry = new AdapterRegistry();
+
+  // Schedule store — persists to ~/.mobyclaw/schedules.json
+  const schedulesPath = path.join(MOBYCLAW_HOME, "schedules.json");
+  const scheduleStore = new ScheduleStore(schedulesPath);
 
   console.log(`⏳ Waiting for agent at ${AGENT_URL}...`);
   await agent.waitForReady(120_000);
   console.log(`✓ Agent is ready`);
 
+  // ── Channel context helper ──────────────────────────────
+
+  function addChannelContext(channelId, message) {
+    if (channelId.startsWith("heartbeat:") || channelId.startsWith("api:") || channelId.startsWith("cli:")) {
+      return message;
+    }
+    const now = new Date().toISOString();
+    return `[context: channel=${channelId}, time=${now}]\n${message}`;
+  }
+
+  // Wrapped version of sendToAgentStream that adds channel context
+  async function sendToAgentStreamWithContext(agentArg, sessionsArg, channelId, message, callbacks) {
+    setLastActiveChannel(channelId);
+    const enriched = addChannelContext(channelId, message);
+    return sendToAgentStream(agentArg, sessionsArg, channelId, enriched, callbacks);
+  }
+
+  // ── Messaging adapters ──────────────────────────────────
+
   if (process.env.TELEGRAM_BOT_TOKEN) {
-    await setupTelegram(agent, sessions, sendToAgentStream);
+    const telegramSend = await setupTelegram(agent, sessions, sendToAgentStreamWithContext);
+    if (telegramSend) registry.register("telegram", telegramSend);
     console.log("✓ Telegram adapter loaded");
   } else {
     console.log("⊘ Telegram: no token, skipping");
   }
+
+  // ── Scheduler + Heartbeat ───────────────────────────────
+
+  startSchedulerLoop(scheduleStore, registry, 30_000);
+
+  const heartbeatSendFn = async (channelId, prompt) => {
+    return sendToAgent(agent, sessions, channelId, prompt);
+  };
+  startHeartbeat(heartbeatSendFn);
 
   const app = express();
   app.use(express.json());
@@ -146,7 +190,56 @@ async function main() {
     if (process.env.TELEGRAM_BOT_TOKEN) channels.push("telegram");
     if (process.env.DISCORD_BOT_TOKEN) channels.push("discord");
     if (process.env.SLACK_BOT_TOKEN) channels.push("slack");
-    res.json({ status: "running", agent_url: AGENT_URL, channels, sessions: sessions.count(), uptime: process.uptime() });
+    const pending = scheduleStore.list("pending").length;
+    res.json({ status: "running", agent_url: AGENT_URL, channels, sessions: sessions.count(), schedules_pending: pending, uptime: process.uptime() });
+  });
+
+  // ── Schedule API ───────────────────────────────────────
+
+  app.get("/api/schedules", (_req, res) => {
+    const status = _req.query.status || null;
+    res.json(scheduleStore.list(status));
+  });
+
+  app.post("/api/schedules", (req, res) => {
+    const { due, message, channel, repeat } = req.body;
+    if (!due || !message) {
+      return res.status(400).json({ error: "due and message are required" });
+    }
+    // Default channel to last active if not provided
+    const targetChannel = channel || getLastActiveChannel();
+    if (!targetChannel) {
+      return res.status(400).json({ error: "channel is required (no last active channel available)" });
+    }
+    const schedule = scheduleStore.create({ due, message, channel: targetChannel, repeat });
+    console.log(`[schedule] Created: ${schedule.id} → ${schedule.channel} at ${schedule.due}${schedule.repeat ? ` (repeat: ${schedule.repeat})` : ""}`);
+    res.status(201).json(schedule);
+  });
+
+  app.delete("/api/schedules/:id", (req, res) => {
+    const schedule = scheduleStore.cancel(req.params.id);
+    if (!schedule) {
+      return res.status(404).json({ error: "Schedule not found or not pending" });
+    }
+    console.log(`[schedule] Cancelled: ${schedule.id}`);
+    res.json(schedule);
+  });
+
+  // ── Delivery API (proactive message push) ───────────────
+
+  app.post("/api/deliver", async (req, res) => {
+    const { channel, message } = req.body;
+    if (!channel || !message) {
+      return res.status(400).json({ error: "channel and message are required" });
+    }
+    const ok = await registry.deliver(channel, message);
+    if (ok) {
+      console.log(`[deliver] Sent to ${channel}: ${message.slice(0, 80)}...`);
+      res.json({ status: "delivered", channel });
+    } else {
+      console.error(`[deliver] Failed to ${channel}`);
+      res.status(500).json({ error: `Failed to deliver to ${channel}` });
+    }
   });
 
   // ── Buffered prompt ───────────────────────────────────────

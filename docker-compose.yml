@@ -36,12 +36,17 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    volumes:
+      - ${MOBYCLAW_HOME:-~/.mobyclaw}:/data/.mobyclaw
     environment:
       - AGENT_URL=http://moby:8080
+      - MOBYCLAW_HOME=/data/.mobyclaw
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
       - WHATSAPP_AUTH=${WHATSAPP_AUTH:-}
+      - MOBYCLAW_HEARTBEAT_INTERVAL=${MOBYCLAW_HEARTBEAT_INTERVAL:-15m}
+      - MOBYCLAW_ACTIVE_HOURS=${MOBYCLAW_ACTIVE_HOURS:-07:00-23:00}
     depends_on:
       - moby
     restart: unless-stopped

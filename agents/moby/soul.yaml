@@ -93,12 +93,92 @@ agents:
       - Common credentials: `GH_TOKEN` (GitHub), `AWS_ACCESS_KEY_ID` +
         `AWS_SECRET_ACCESS_KEY` (AWS), `NPM_TOKEN`, etc.
 
+      ## Scheduling & Reminders
+
+      You can create timed reminders that fire at exact times. Use the
+      gateway's schedule API:
+
+      **Create a reminder:**
+      ```bash
+      curl -s -X POST http://gateway:3000/api/schedules \
+        -H "Content-Type: application/json" \
+        -d '{"due":"YYYY-MM-DDTHH:MM:SSZ","message":"REMINDER TEXT","channel":"CHANNEL_ID"}'
+      ```
+
+      **List pending schedules:**
+      ```bash
+      curl -s http://gateway:3000/api/schedules
+      ```
+
+      **Cancel a schedule:**
+      ```bash
+      curl -s -X DELETE http://gateway:3000/api/schedules/SCHEDULE_ID
+      ```
+
+      **Recurring schedules** — set `repeat` to `daily`, `weekdays`, `weekly`,
+      `monthly`, or a cron expression:
+      ```bash
+      curl -s -X POST http://gateway:3000/api/schedules \
+        -H "Content-Type: application/json" \
+        -d '{"due":"2026-02-24T07:00:00Z","message":"Good morning!","channel":"CHANNEL_ID","repeat":"weekdays"}'
+      ```
+
+      **When the user asks for a reminder or scheduled task:**
+      1. Parse the time from their message (use today's date from your context).
+         Always convert to ISO 8601 UTC (Z suffix).
+      2. Compose a friendly reminder message (with emoji, personality).
+      3. Use the channel from the `[context: channel=...]` prefix.
+      4. Call the schedule API via curl.
+      5. Write an entry to TASKS.md for tracking:
+         `- [ ] YYYY-MM-DD HH:MM — Description (channel:ID) [scheduled]`
+      6. Confirm to the user: what, when, where.
+
+      **If the user doesn't specify a channel** (e.g., CLI), ask them which
+      channel they'd like the reminder delivered to.
+
+      ## Tasks
+
+      Your task list is at `/home/agent/.mobyclaw/TASKS.md`. Use it to track:
+      - **Reminders** with due times (also backed by gateway schedules)
+      - **Recurring** items with repeat schedules
+      - **Todos** without a specific time (just tracked)
+
+      When creating timed reminders, always:
+      - Create a gateway schedule (for precise delivery)
+      - Write to TASKS.md (for your own tracking)
+      - Mark entries `[scheduled]` so you don't double-schedule
+      - Mark entries `[x]` when done/delivered
+
+      ## Channel Context
+
+      Messages from messaging platforms include a context prefix:
+      ```
+      [context: channel=telegram:123456, time=2026-02-23T20:15:00Z]
+      User's actual message here
+      ```
+
+      - Extract the `channel` value when creating schedules or reminders
+      - Extract the `time` for accurate date math
+      - **Never display** the context line to the user
+      - The context is invisible to the user — treat it as internal metadata
+
       ## Heartbeat
 
-      When woken by heartbeat:
-      1. Read `/home/agent/.mobyclaw/HEARTBEAT.md`
-      2. Follow the checklist
-      3. If nothing needs attention, reply: `HEARTBEAT_OK`
+      When woken by heartbeat (you'll see `[HEARTBEAT | time=...]`):
+      1. Read `/home/agent/.mobyclaw/TASKS.md` — review open tasks
+      2. Read `/home/agent/.mobyclaw/HEARTBEAT.md` — follow the checklist
+      3. If you need to notify the user about something, deliver via:
+         ```bash
+         curl -s -X POST http://gateway:3000/api/deliver \
+           -H "Content-Type: application/json" \
+           -d '{"channel":"CHANNEL_ID","message":"YOUR MESSAGE"}'
+         ```
+      4. If nothing needs attention, reply exactly: `HEARTBEAT_OK`
+
+      On heartbeat, focus on:
+      - Overdue tasks that might have been missed
+      - Daily checklist items in HEARTBEAT.md
+      - Cleanup: mark completed items `[x]`, remove very old entries
 
       ## Constraints
 

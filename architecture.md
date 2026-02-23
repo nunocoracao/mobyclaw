@@ -110,7 +110,9 @@ volumes. This makes it visible, editable, and portable.
 ~/.mobyclaw/
 ├── soul.yaml            # Agent personality + config (user-editable)
 ├── MEMORY.md            # Long-term curated memory
+├── TASKS.md             # Agent's task/reminder list
 ├── HEARTBEAT.md         # Heartbeat checklist
+├── schedules.json       # Scheduled reminders (gateway-managed)
 ├── credentials.env      # Service credentials (GH_TOKEN, AWS keys, etc.)
 ├── workspaces.conf      # Workspace folder mappings (name=path)
 ├── memory/              # Daily logs
@@ -335,6 +337,7 @@ mobyclaw/
 │       ├── index.js           # Express app, /prompt and /prompt/stream endpoints
 │       ├── agent-client.js    # HTTP client for cagent API with SSE streaming
 │       ├── sessions.js        # Session store with per-channel queuing
+│       ├── scheduler.js       # Schedule store, scheduler loop, heartbeat timer
 │       ├── tool-labels.js     # Shared tool name → human-readable label formatting
 │       └── adapters/          # Messaging platform adapters
 │           └── telegram.js    # Telegraf bot with progressive message editing
@@ -423,7 +426,9 @@ default `agents/moby/soul.yaml` to `~/.mobyclaw/soul.yaml` as a starting point.
 ~/.mobyclaw/
 ├── soul.yaml           # Active agent config (user-editable)
 ├── MEMORY.md           # Long-term curated memory
+├── TASKS.md            # Agent's task/reminder list
 ├── HEARTBEAT.md        # Heartbeat checklist
+├── schedules.json      # Scheduled reminders (gateway-managed)
 ├── credentials.env     # Service credentials (GH_TOKEN, etc.)
 ├── workspaces.conf     # Workspace folder mappings
 ├── memory/
@@ -516,6 +521,8 @@ gateway processes response
   └─ If actual content → deliver to user's last active channel
 ```
 
+See §6.7 for the full heartbeat design.
+
 ### 6.3 Cron Flow
 
 ```
@@ -595,6 +602,284 @@ gateway routing (sendToAgentStream)
 **CLI streaming**: `mobyclaw run` and `mobyclaw chat` connect to the SSE
 endpoint and print tokens directly to stdout as they arrive. Tool call
 status is shown on stderr so it doesn't pollute piped output.
+
+### 6.6 Scheduler — Timed Reminders & Recurring Schedules
+
+The scheduler is a **gateway-side timer loop** that delivers pre-composed
+messages at exact times. It does NOT involve the agent at delivery time —
+the agent composes the message upfront when creating the schedule.
+
+#### Schedule API
+
+The gateway exposes REST endpoints for schedule management. The agent
+calls these via `curl` (shell tool). The CLI and external tools can also
+use them.
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `GET /api/schedules` | List | Returns pending schedules |
+| `POST /api/schedules` | Create | Creates a new schedule |
+| `DELETE /api/schedules/:id` | Cancel | Cancels a pending schedule |
+
+**Create request body:**
+```json
+{
+  "due": "2026-02-24T09:00:00Z",
+  "message": "🔔 Hey! Reminder: **Buy groceries!**",
+  "channel": "telegram:123456",
+  "repeat": null
+}
+```
+
+**Schedule object (stored):**
+```json
+{
+  "id": "sch_a1b2c3",
+  "due": "2026-02-24T09:00:00Z",
+  "message": "🔔 Hey! Reminder: **Buy groceries!**",
+  "channel": "telegram:123456",
+  "status": "pending",
+  "repeat": null,
+  "created_at": "2026-02-23T20:15:00Z",
+  "delivered_at": null
+}
+```
+
+**Status values:** `pending` → `delivered` | `cancelled`
+
+**Persistence:** `~/.mobyclaw/schedules.json` — bind-mounted, survives
+restarts, user-visible. Gateway reads/writes this file.
+
+#### Repeat / Recurring Schedules
+
+The `repeat` field controls recurrence:
+
+| Value | Meaning | Example |
+|---|---|---|
+| `null` | One-shot (default) | "Remind me tomorrow at 9am" |
+| `"daily"` | Every day at the same time | "Remind me every day at 9am" |
+| `"weekdays"` | Mon–Fri at the same time | "Every weekday morning" |
+| `"weekly"` | Same day+time each week | "Every Monday at 9am" |
+| `"monthly"` | Same day+time each month | "First of every month" |
+| `"0 7 * * 1-5"` | Cron expression | Full cron flexibility |
+
+When a recurring schedule fires:
+1. Gateway delivers the message
+2. Marks current entry as `delivered`
+3. Computes next occurrence from the `repeat` rule
+4. Creates a new `pending` entry with the next `due` time
+
+The original entry's `repeat` value is copied to the new entry, creating
+an ongoing chain. Cancelling the latest pending entry stops the chain.
+
+#### Scheduler Loop
+
+Runs every **30 seconds** inside the gateway:
+
+```
+Every 30 seconds:
+  │
+  ├─ Read schedules.json
+  ├─ Find entries where due <= now AND status == "pending"
+  │
+  ├─ For each due schedule:
+  │   ├─ Parse channel (e.g., "telegram:123456")
+  │   ├─ Call adapter's send function via delivery API
+  │   ├─ Mark status = "delivered", set delivered_at
+  │   ├─ If repeat: create next pending entry
+  │   └─ Save schedules.json
+  │
+  └─ Done (< 1ms for most runs)
+```
+
+#### Delivery API
+
+Internal gateway endpoint for sending proactive messages to any channel:
+
+```
+POST /api/deliver
+{
+  "channel": "telegram:123456",
+  "message": "🔔 Reminder text"
+}
+```
+
+- Parses the channel prefix (`telegram`, `discord`, `slack`, etc.)
+- Routes to the appropriate adapter's proactive send function
+- Returns success/failure
+- Bypasses session management — this is a direct push, not an agent turn
+
+**Adapter registry:** Gateway maintains a map of platform → send function.
+Each adapter registers itself on startup:
+
+```js
+const adapters = {
+  telegram: { send: (chatId, message) => bot.telegram.sendMessage(chatId, message) },
+  // discord: { send: ... },
+  // slack: { send: ... },
+};
+```
+
+#### How the Agent Creates a Schedule
+
+When the user says "remind me tomorrow at 9am to buy groceries":
+
+```
+User (Telegram): "Remind me tomorrow at 9am to buy groceries"
+  │
+  ├─ Gateway prepends channel context (see §6.8)
+  │
+  ▼
+Agent processes message
+  │
+  ├─ 1. Create schedule via gateway API:
+  │     curl -s -X POST http://gateway:3000/api/schedules \
+  │       -H "Content-Type: application/json" \
+  │       -d '{"due":"2026-02-24T09:00:00Z",
+  │            "message":"🔔 Hey! Reminder: Buy groceries!",
+  │            "channel":"telegram:123456"}'
+  │
+  ├─ 2. Write to TASKS.md for tracking:
+  │     "- [ ] 2026-02-24 09:00 — Buy groceries [scheduled]"
+  │
+  └─ 3. Respond: "Got it! I'll remind you tomorrow at 9am. ✅"
+```
+
+### 6.7 Heartbeat — Periodic Agent Wake-Up
+
+The heartbeat is an **intelligent periodic check** where the agent wakes
+up, reviews its state, and acts if needed. Unlike the scheduler (dumb
+timer, pre-composed message), the heartbeat involves full LLM reasoning.
+
+**Trigger:** Gateway timer, every `MOBYCLAW_HEARTBEAT_INTERVAL` (default: 15m)
+
+**Active hours:** Only fires between `MOBYCLAW_ACTIVE_HOURS` (default:
+`07:00-23:00`). Silent outside these hours. Scheduled reminders always
+fire regardless of active hours.
+
+**Heartbeat prompt (sent by gateway to agent):**
+
+```
+[HEARTBEAT | time=2026-02-24T09:03:00Z]
+You are being woken by a scheduled heartbeat.
+
+1. Read TASKS.md — review your task list, note anything relevant
+2. Read HEARTBEAT.md — follow the checklist
+3. If you need to notify the user about something, use:
+   curl -s -X POST http://gateway:3000/api/deliver \
+     -H "Content-Type: application/json" \
+     -d '{"channel": "CHANNEL_ID", "message": "YOUR MESSAGE"}'
+4. If nothing needs attention, reply exactly: HEARTBEAT_OK
+```
+
+**Heartbeat flow:**
+
+```
+Gateway timer fires (every 15 minutes)
+  │
+  ├─ Check active hours (07:00-23:00) → skip if outside
+  │
+  ├─ Send heartbeat prompt to agent (session: "heartbeat:main")
+  │
+  ▼
+Agent processes heartbeat
+  │
+  ├─ Reads TASKS.md
+  │   ├─ Reviews open tasks
+  │   ├─ Marks completed items
+  │   └─ Cleans up old entries
+  │
+  ├─ Reads HEARTBEAT.md
+  │   ├─ Follows checklist items
+  │   └─ Daily tasks (once per day)
+  │
+  ├─ If something needs user attention:
+  │   └─ curl POST http://gateway:3000/api/deliver ...
+  │
+  └─ Response:
+      ├─ "HEARTBEAT_OK" → gateway suppresses, logs quietly
+      └─ Summary text → gateway logs it
+```
+
+**Why the agent uses `/api/deliver` instead of just responding:**
+The heartbeat runs on a system session (`heartbeat:main`), not a user
+channel. The agent's response goes nowhere useful. For the agent to
+reach the user, it explicitly calls the delivery API with the target
+channel. This gives the agent control over WHERE to send (different
+tasks may target different channels).
+
+### 6.8 Channel Context Injection
+
+For the agent to know which channel a message came from (needed when
+creating schedules), the gateway prepends a context line to every user
+message:
+
+```
+[context: channel=telegram:123456, time=2026-02-23T20:15:00Z]
+Remind me tomorrow at 9am to buy groceries
+```
+
+The agent's instruction tells it to:
+- Extract the channel ID when creating schedules or timed tasks
+- Include the channel in schedule API calls and TASKS.md entries
+- Never display the context line to the user
+- Ask the user which channel to use if they request a reminder from
+  a non-messaging channel (e.g., CLI) and multiple channels are available
+
+For heartbeat prompts, no channel context is included (it's a system
+session, not a user message).
+
+**Why in the message, not metadata?** cagent's API doesn't support
+per-message metadata fields. The user message content is the only field
+we control. A bracketed prefix is simple, reliable, and the LLM easily
+parses it.
+
+### 6.9 TASKS.md — Agent's Task Store
+
+`TASKS.md` lives at `~/.mobyclaw/TASKS.md`. It's a Markdown file the
+agent uses to track reminders, todos, and recurring tasks.
+
+```markdown
+# Tasks
+
+> Moby's task and reminder list. Moby manages this file.
+> You can also edit it directly.
+
+## Reminders
+
+- [ ] 2026-02-24 09:00 — Buy groceries (channel:telegram:123456) [scheduled]
+- [ ] 2026-02-24 14:00 — Call the dentist (channel:telegram:123456) [scheduled]
+- [x] ~~2026-02-23 15:00 — Send report to Alice~~ (delivered)
+
+## Recurring
+
+- [ ] weekdays 07:00 — Morning briefing (channel:telegram:123456) [scheduled]
+
+## Todo
+
+- [ ] Review PR #1234 on myapp
+- [ ] Research vector databases for memory search
+- [x] ~~Set up workspace mounts~~
+```
+
+**Design:**
+- Flexible Markdown — agent uses LLM intelligence to interpret
+- `[scheduled]` marker — indicates a gateway schedule was created
+  (prevents double-scheduling on heartbeat)
+- Channel stored per-task — reminders go back to the originating channel
+- Todos without times — just tracked, agent mentions in heartbeat if relevant
+- Agent marks `[x]` when done, may clean up old entries
+
+### 6.10 Last Active Channel
+
+The gateway tracks the **last messaging channel** the user interacted with.
+This is used as the default target when:
+- The heartbeat needs to notify the user about something general
+- A schedule was created without an explicit channel
+
+Stored in memory (resets on gateway restart). Updated whenever a message
+arrives from any messaging adapter (Telegram, Discord, etc.). CLI/API
+channels do NOT update last active (they're ephemeral).
 
 ---
 
@@ -731,7 +1016,8 @@ etc.) — those just set env vars, which Compose picks up the same way.
 | `DISCORD_BOT_TOKEN` | gateway | No | Enables Discord adapter |
 | `SLACK_BOT_TOKEN` | gateway | No | Enables Slack adapter |
 | `WHATSAPP_AUTH` | gateway | No | Enables WhatsApp adapter |
-| `MOBYCLAW_HEARTBEAT_INTERVAL` | gateway | No | Heartbeat frequency (default: `30m`) |
+| `MOBYCLAW_HEARTBEAT_INTERVAL` | gateway | No | Heartbeat frequency (default: `15m`) |
+| `MOBYCLAW_ACTIVE_HOURS` | gateway | No | Heartbeat window (default: `07:00-23:00`) |
 | `MOBYCLAW_HOME` | all | No | Override `~/.mobyclaw/` path |
 
 **Convention:** Messaging adapter tokens double as feature flags — if
@@ -1194,6 +1480,11 @@ Deliverables:
 | ADR-023 | `docker-compose.override.yml` for per-user config | Base compose stays static + git-committed. Override is auto-generated from `credentials.env` + `workspaces.conf` on every `mobyclaw up`. Docker Compose merges them automatically. Gitignored. | 2026-02-23 |
 | ADR-024 | Separate `credentials.env` from `.env` | `.env` = mobyclaw infra (LLM keys, messaging). `credentials.env` = user service tokens (gh, aws). Different owners, different lifecycle. credentials.env lives in `~/.mobyclaw/` (portable with agent state). | 2026-02-23 |
 | ADR-025 | Workspaces as host bind mounts via `workspaces.conf` | Simple `name=path` format in `~/.mobyclaw/workspaces.conf`. CLI manages it (`workspace add/remove/list`). Override generation maps to Docker volumes. Changes require restart. | 2026-02-23 |
+| ADR-026 | Gateway-side scheduler with agent-created schedules via REST API | Agent calls `POST /api/schedules` via curl. Gateway owns timing, persistence, and delivery. Separation: agent composes messages, gateway delivers at the right time. No agent involvement at fire time (pre-composed messages). | 2026-02-23 |
+| ADR-027 | Heartbeat as periodic agent prompt, separate from scheduler | Scheduler = precise dumb timer (30s resolution). Heartbeat = intelligent agent review (15m interval). Different concerns: scheduler delivers pre-composed messages; heartbeat invokes full LLM reasoning. Agent uses `/api/deliver` to proactively message users from heartbeat. | 2026-02-23 |
+| ADR-028 | TASKS.md as agent-managed task store (Markdown) | Flexible Markdown file. Agent writes entries via filesystem tools. `[scheduled]` marker prevents double-scheduling. Channel stored per-task. Heartbeat reviews it. Complements schedules.json (gateway-owned) — TASKS.md is the agent's view, schedules.json is the gateway's execution state. | 2026-02-23 |
+| ADR-029 | Channel context injected as message prefix by gateway | Gateway prepends `[context: channel=telegram:123, time=...]` to every user message. Only mechanism available since cagent API has no per-message metadata. Agent extracts channel for schedule creation. Never displayed to user. | 2026-02-23 |
+| ADR-030 | Last active channel for fallback delivery | Gateway tracks last messaging channel used. Fallback when heartbeat/agent needs to deliver without a specific channel target. Resets on restart (acceptable for personal agent). | 2026-02-23 |
 
 ---
 

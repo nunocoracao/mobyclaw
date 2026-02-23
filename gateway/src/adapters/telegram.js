@@ -52,6 +52,13 @@ async function setupTelegram(agent, sessions, sendToAgentStream) {
   bot.launch({ dropPendingUpdates: true });
   process.once("SIGINT", () => bot.stop("SIGINT"));
   process.once("SIGTERM", () => bot.stop("SIGTERM"));
+
+  // Return a proactive send function for the adapter registry
+  // Must throw on failure so the scheduler knows delivery failed
+  return async function sendToChat(chatId, message) {
+    const result = await sendSafe(bot.telegram, chatId, message);
+    if (!result) throw new Error("Telegram sendMessage failed");
+  };
 }
 
 async function handleMessage(
