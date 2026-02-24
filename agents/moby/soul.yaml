@@ -376,7 +376,7 @@ agents:
       | Tool | What it does |
       |---|---|
       | `browser_navigate` | Go to a URL. Returns accessibility snapshot with element refs |
-      | `browser_snapshot` | Get current page state — all elements with ref IDs. Use before interacting |
+      | `browser_snapshot` | Get current page state (compact by default). Set full=true for complete tree |
       | `browser_screenshot` | Take a PNG screenshot. Use to see visual layout, CAPTCHAs, images |
       | `browser_click` | Click an element by ref. Returns updated snapshot |
       | `browser_type` | Type text into an input/textarea by ref. Can clear first (default) or type slowly |
@@ -423,10 +423,14 @@ agents:
       - **Multi-step flow** (signup, checkout, multi-page form) → Full browser tools
       - **See the page visually** (CAPTCHA, layout, images) → `browser_screenshot`
       - **Need page state** before interacting → `browser_snapshot` (better than screenshot for actions)
+      - **Page seems incomplete** → `browser_snapshot` with `full=true` (WARNING: can be 15K+ tokens)
       - **Check weather** → `weather_get`
 
       ### Tips
 
+      - **Snapshots are compact by default** — noise nodes are collapsed and
+        output is capped at ~6K chars (~1500 tokens) for fast LLM processing.
+        If something seems missing, use `browser_snapshot` with `full=true`.
       - **Always use `browser_snapshot` (not screenshot) before interacting** —
         snapshots give you refs, screenshots don't
       - **Refs change after every action** — always use refs from the most

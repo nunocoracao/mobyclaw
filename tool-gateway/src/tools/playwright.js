@@ -91,6 +91,10 @@ async function closeBrowser() {
 
 // ── Snapshot helpers ────────────────────────────────────────
 
+// Max snapshot size in chars. ~6000 chars ≈ ~1500 tokens.
+// Keeps LLM processing fast while preserving all interactive elements.
+const SNAPSHOT_MAX_CHARS = 6000;
+
 async function takeSnapshot(page) {
   try {
     const snapshot = await page._snapshotForAI();
@@ -138,15 +142,198 @@ function formatA11yTree(node, depth) {
   return parts.join("\n");
 }
 
+// ── Snapshot trimming ───────────────────────────────────────
+//
+// _snapshotForAI() returns the full accessibility tree which can be
+// 15K+ tokens for content-heavy pages (e.g., Hacker News = 59KB).
+// The LLM spends 10-20s processing each massive snapshot.
+//
+// Strategy:
+//   1. Parse lines, classify as interactive (has ref) or decorative
+//   2. Keep all interactive elements + surrounding text context
+//   3. Collapse runs of non-interactive content (show count)
+//   4. Remove noise roles (generic wrappers, rowgroup, presentation)
+//   5. Hard cap at SNAPSHOT_MAX_CHARS with truncation notice
+//
+// The agent can request full=true on browser_snapshot if needed.
+
+// Roles that are just structural wrappers with no user-facing meaning
+const NOISE_ROLES = new Set([
+  "generic",
+  "none",
+  "presentation",
+  "rowgroup",
+  "group",
+  "Section",
+  "HeaderAsNonLandmark",
+  "FooterAsNonLandmark",
+]);
+
+// Roles that indicate interactive or high-value elements
+const INTERACTIVE_ROLES = new Set([
+  "link",
+  "button",
+  "textbox",
+  "searchbox",
+  "combobox",
+  "checkbox",
+  "radio",
+  "switch",
+  "slider",
+  "spinbutton",
+  "menuitem",
+  "menuitemcheckbox",
+  "menuitemradio",
+  "option",
+  "tab",
+  "treeitem",
+]);
+
+// Regex to detect ref IDs in snapshot lines (e.g., [ref=s1e4])
+const REF_PATTERN = /\[ref=\w+\]/;
+
+/**
+ * Trim a raw _snapshotForAI() string to keep it under the char limit.
+ *
+ * Algorithm:
+ *   - Split into lines
+ *   - Mark each line as "keep" (has a ref, is interactive, is a landmark,
+ *     or is within CONTEXT_RADIUS of a kept line) or "skip"
+ *   - Replace consecutive skipped lines with a summary like
+ *     "  ... (12 more items)"
+ *   - If still over limit, hard-truncate with notice
+ */
+function trimSnapshot(raw) {
+  if (!raw || typeof raw !== "string") return raw || "";
+
+  // If already small enough, return as-is
+  if (raw.length <= SNAPSHOT_MAX_CHARS) return raw;
+
+  const lines = raw.split("\n");
+  const totalLines = lines.length;
+
+  // Phase 1: Classify each line
+  const keep = new Array(totalLines).fill(false);
+
+  for (let i = 0; i < totalLines; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    // Always keep lines with element refs (interactive elements)
+    if (REF_PATTERN.test(line)) {
+      keep[i] = true;
+      continue;
+    }
+
+    // Keep landmark roles (navigation, main, banner, contentinfo, etc.)
+    const firstWord = line.split(/[\s"(\[]/)[0].toLowerCase();
+    if (
+      firstWord === "navigation" ||
+      firstWord === "main" ||
+      firstWord === "banner" ||
+      firstWord === "contentinfo" ||
+      firstWord === "complementary" ||
+      firstWord === "form" ||
+      firstWord === "search" ||
+      firstWord === "dialog" ||
+      firstWord === "alertdialog" ||
+      firstWord === "alert" ||
+      firstWord === "heading" ||
+      firstWord === "table" ||
+      firstWord === "list" ||
+      firstWord === "img"
+    ) {
+      keep[i] = true;
+      continue;
+    }
+  }
+
+  // Phase 2: Context — keep 1 line above and below each kept line
+  // so the agent has enough context to understand the structure
+  const keepWithContext = [...keep];
+  for (let i = 0; i < totalLines; i++) {
+    if (keep[i]) {
+      if (i > 0) keepWithContext[i - 1] = true;
+      if (i < totalLines - 1) keepWithContext[i + 1] = true;
+    }
+  }
+
+  // Phase 3: Build trimmed output, collapsing skipped runs
+  const output = [];
+  let skippedCount = 0;
+  let lastIndent = "";
+
+  for (let i = 0; i < totalLines; i++) {
+    if (keepWithContext[i] || !lines[i].trim()) {
+      // Flush skipped summary if we had any
+      if (skippedCount > 0) {
+        if (skippedCount >= 3) {
+          output.push(`${lastIndent}  ... (${skippedCount} more items)`);
+        } else {
+          // For 1-2 skipped lines, cheaper to just include them
+          for (let j = i - skippedCount; j < i; j++) {
+            output.push(lines[j]);
+          }
+        }
+        skippedCount = 0;
+      }
+      output.push(lines[i]);
+    } else {
+      if (skippedCount === 0) {
+        // Capture indent of first skipped line's parent for alignment
+        const match = lines[i].match(/^(\s*)/);
+        lastIndent = match ? match[1] : "";
+      }
+      skippedCount++;
+    }
+  }
+
+  // Flush trailing skipped
+  if (skippedCount > 0 && skippedCount >= 3) {
+    output.push(`${lastIndent}  ... (${skippedCount} more items)`);
+  } else if (skippedCount > 0) {
+    for (let j = totalLines - skippedCount; j < totalLines; j++) {
+      output.push(lines[j]);
+    }
+  }
+
+  let result = output.join("\n");
+
+  // Phase 4: Hard cap — if trimming wasn't enough, truncate
+  if (result.length > SNAPSHOT_MAX_CHARS) {
+    // Find a clean line break near the limit
+    let cutoff = result.lastIndexOf("\n", SNAPSHOT_MAX_CHARS - 100);
+    if (cutoff < SNAPSHOT_MAX_CHARS * 0.5) cutoff = SNAPSHOT_MAX_CHARS - 100;
+    result =
+      result.slice(0, cutoff) +
+      "\n\n... [snapshot truncated — use browser_scroll to see more, or browser_snapshot with full=true]";
+  }
+
+  const originalLines = totalLines;
+  const keptLines = output.length;
+  const ratio = Math.round((1 - keptLines / originalLines) * 100);
+  if (ratio > 10) {
+    result += `\n\n[Trimmed: ${originalLines} → ${keptLines} lines (${ratio}% reduction)]`;
+  }
+
+  return result;
+}
+
 async function pageHeader(page) {
   const title = await page.title().catch(() => "");
   const url = page.url();
   return `Page: ${title || "(no title)"}\nURL: ${url}`;
 }
 
-async function snapshotResponse(page) {
+/**
+ * Build a snapshot response, optionally trimmed.
+ * @param {Page} page
+ * @param {boolean} compact - If true (default), trim the snapshot for speed
+ */
+async function snapshotResponse(page, compact = true) {
   const header = await pageHeader(page);
-  const snapshot = await takeSnapshot(page);
+  const raw = await takeSnapshot(page);
+  const snapshot = compact ? trimSnapshot(raw) : raw;
   return `${header}\n\n${snapshot}`;
 }
 
@@ -212,13 +399,20 @@ function registerPlaywrightTools(server) {
     "browser_snapshot",
     "Capture an accessibility snapshot of the current page. Returns a structured text " +
       "representation of the page with ref IDs for all interactive elements. Use this " +
-      "to understand what's on the page before interacting. Better than screenshot for actions.",
-    {},
-    async () => {
+      "to understand what's on the page before interacting. Better than screenshot for actions. " +
+      "By default returns a compact snapshot (interactive elements + landmarks only). " +
+      "Set full=true to get the complete accessibility tree (WARNING: can be very large, 15K+ tokens for complex pages).",
+    {
+      full: z
+        .boolean()
+        .optional()
+        .describe("Return full uncompacted snapshot. Default: false (compact). Only use if you need every detail."),
+    },
+    async ({ full }) => {
       try {
         const page = await ensurePage();
         resetIdleTimer();
-        const text = await snapshotResponse(page);
+        const text = await snapshotResponse(page, !full);
         return { content: [{ type: "text", text }] };
       } catch (err) {
         return {

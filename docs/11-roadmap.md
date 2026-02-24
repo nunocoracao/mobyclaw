@@ -92,6 +92,8 @@ Success criteria:
 - Agent can fill forms, click buttons, submit multi-step flows ✅
 - Agent can take screenshots for visual verification ✅
 - 19 tools total (3 lightweight + 16 browser automation) ✅
+- **Snapshot trimming** — compact mode (default) reduces 15K-token snapshots to ~1500 tokens ✅
+- `browser_snapshot` accepts `full=true` for complete accessibility tree when needed ✅
 
 ### Phase 3 - Workspace + Integrations
 
