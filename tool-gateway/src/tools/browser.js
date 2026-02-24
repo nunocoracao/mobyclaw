@@ -12,6 +12,7 @@
 
 const { JSDOM } = require("jsdom");
 const { Readability } = require("@mozilla/readability");
+const { z } = require("zod");
 
 const FETCH_TIMEOUT_MS = 15000;
 const MAX_CONTENT_LENGTH = 100000; // ~100KB of text
@@ -30,15 +31,13 @@ function registerBrowserTools(server) {
       "Strips navigation, ads, and boilerplate. Returns the main content of the page. " +
       "Use for reading articles, documentation, blog posts, etc.",
     {
-      url: {
-        type: "string",
-        description: "The URL to fetch",
-      },
-      raw: {
-        type: "boolean",
-        description:
-          "If true, return raw HTML instead of extracted text. Default: false",
-      },
+      url: z.string().describe("The URL to fetch"),
+      raw: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, return raw HTML instead of extracted text. Default: false"
+        ),
     },
     async ({ url, raw }) => {
       try {
@@ -158,14 +157,13 @@ function registerBrowserTools(server) {
     "Search the web using DuckDuckGo. Returns a list of results with titles, " +
       "URLs, and snippets. Use for finding information, looking up topics, etc.",
     {
-      query: {
-        type: "string",
-        description: "The search query",
-      },
-      max_results: {
-        type: "number",
-        description: "Maximum number of results to return (default: 8, max: 20)",
-      },
+      query: z.string().describe("The search query"),
+      max_results: z
+        .number()
+        .optional()
+        .describe(
+          "Maximum number of results to return (default: 8, max: 20)"
+        ),
     },
     async ({ query, max_results }) => {
       const limit = Math.min(max_results || 8, 20);

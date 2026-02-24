@@ -20,8 +20,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-# Install MCP SDK for the bridge
-RUN npm install -g @modelcontextprotocol/sdk@1.27.0
+# Install MCP SDK + zod for the bridge
+RUN npm install -g @modelcontextprotocol/sdk@1.27.0 zod
 
 # Install GitHub CLI
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \

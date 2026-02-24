@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────
 
 const FETCH_TIMEOUT_MS = 10000;
+const { z } = require("zod");
 
 // WMO weather interpretation codes → human-readable
 const WMO_CODES = {
@@ -56,24 +57,25 @@ function registerWeatherTools(server) {
       "Provide either a city/place name (geocoded automatically) or latitude/longitude coordinates. " +
       "Returns temperature, conditions, humidity, wind, and daily forecast.",
     {
-      location: {
-        type: "string",
-        description:
+      location: z
+        .string()
+        .optional()
+        .describe(
           'City or place name (e.g., "London", "New York", "Tokyo"). ' +
-          "Will be geocoded automatically. Omit if providing lat/lon.",
-      },
-      latitude: {
-        type: "number",
-        description: "Latitude (-90 to 90). Use with longitude instead of location name.",
-      },
-      longitude: {
-        type: "number",
-        description: "Longitude (-180 to 180). Use with latitude instead of location name.",
-      },
-      days: {
-        type: "number",
-        description: "Number of forecast days (1-7, default: 3)",
-      },
+            "Will be geocoded automatically. Omit if providing lat/lon."
+        ),
+      latitude: z
+        .number()
+        .optional()
+        .describe("Latitude (-90 to 90). Use with longitude instead of location name."),
+      longitude: z
+        .number()
+        .optional()
+        .describe("Longitude (-180 to 180). Use with latitude instead of location name."),
+      days: z
+        .number()
+        .optional()
+        .describe("Number of forecast days (1-7, default: 3)"),
     },
     async ({ location, latitude, longitude, days }) => {
       const forecastDays = Math.min(Math.max(days || 3, 1), 7);

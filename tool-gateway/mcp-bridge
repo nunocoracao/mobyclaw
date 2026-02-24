@@ -62,15 +62,30 @@ async function main() {
   const server = new McpServer({ name: "mcp-bridge", version: "1.0.0" });
 
   // Re-register each remote tool locally so cagent discovers them
+  const { z } = require("zod");
+
   for (const tool of remoteTools) {
-    // Build the input schema object for the McpServer.tool() call
+    // Convert JSON Schema properties → Zod shape for McpServer.tool()
     const shape = {};
     if (tool.inputSchema?.properties) {
       for (const [key, prop] of Object.entries(tool.inputSchema.properties)) {
-        shape[key] = {
-          type: prop.type || "string",
-          description: prop.description || "",
-        };
+        const required =
+          tool.inputSchema.required && tool.inputSchema.required.includes(key);
+        let zType;
+        switch (prop.type) {
+          case "number":
+          case "integer":
+            zType = z.number();
+            break;
+          case "boolean":
+            zType = z.boolean();
+            break;
+          default:
+            zType = z.string();
+        }
+        if (prop.description) zType = zType.describe(prop.description);
+        if (!required) zType = zType.optional();
+        shape[key] = zType;
       }
     }
 
