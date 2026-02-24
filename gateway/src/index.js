@@ -191,6 +191,18 @@ async function main() {
     console.log(`Gateway API listening on :${PORT}`);
     console.log();
     console.log("Moby is ready. Send a message!");
+
+    // Notify the last-used channel that Moby is back online.
+    // Runs after listen() so the server is fully ready.
+    const defaultChannel = channelStore.getDefault();
+    if (defaultChannel) {
+      registry
+        .deliver(defaultChannel, "🐋 I'm back online and ready to go!")
+        .then((ok) => {
+          if (ok) console.log(`[startup] Notified ${defaultChannel}`);
+        })
+        .catch(() => {});
+    }
   });
 }
 
