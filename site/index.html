@@ -73,6 +73,14 @@
       padding: 1.5rem;
       overflow-x: auto;
       line-height: 1.5;
+      max-width: 100%;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    pre code {
+      white-space: pre;
+      word-break: normal;
+      overflow-wrap: normal;
     }
 
     code {
@@ -288,8 +296,9 @@
       flex-shrink: 0;
     }
 
+    .step-content { min-width: 0; overflow: hidden; }
     .step-content h3 { color: var(--text); margin-bottom: 0.5rem; }
-    .step-content pre { margin-top: 0.75rem; }
+    .step-content pre { margin-top: 0.75rem; max-width: 100%; overflow-x: auto; }
 
     /* ─── Config Section ───────────────────────────── */
     .config-grid {
@@ -336,6 +345,20 @@
       section { padding: 4rem 0; }
       .step { grid-template-columns: 1fr; text-align: center; }
       .step-number { margin: 0 auto; }
+      .step-content pre { text-align: left; font-size: 0.8rem; padding: 1rem; }
+      pre { padding: 1rem; font-size: 0.8rem; }
+      pre { padding: 1rem; font-size: 0.8rem; }
+      .config-grid { grid-template-columns: 1fr; }
+      .features-grid { grid-template-columns: 1fr; }
+      .how-it-works-diagram svg { max-width: 100%; }
+    }
+
+    @media (max-width: 480px) {
+      pre { padding: 0.75rem; font-size: 0.75rem; word-break: break-all; white-space: pre-wrap; }
+      .step-content { text-align: left; }
+      .step-content pre { text-align: left; }
+      h2 { font-size: 1.5rem; }
+      .container { padding: 0 1rem; }
     }
   </style>
 </head>
