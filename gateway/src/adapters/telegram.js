@@ -15,17 +15,24 @@
 //   - When new text starts after tools, a new text message
 //     is created
 //
-// This means: user gets separate notifications for each
-// distinct text response from the agent. Tool status and
-// response text are never mixed in the same message.
+// Commands:
+//   /clear  — reset conversation (alias /new, /reset)
+//   /stop   — abort current run + clear queue
+//   /status — show session info
+//
+// OpenClaw-inspired UX:
+//   - Typing indicator fires immediately on message receipt
+//   - Queue feedback: user sees "⏳ Queued" when message is
+//     queued behind a running task
+//   - Debounce: rapid messages are collected into one turn
 // ─────────────────────────────────────────────────────────────
 
 const { Telegraf } = require("telegraf");
 const { formatToolLabel } = require("../tool-labels");
 
 const EDIT_INTERVAL_MS = 1200;
-const TEXT_FIRST_SEND_DELAY_MS = 2500; // Buffer text before first send for better notification previews
-const TEXT_GAP_NEW_MSG_MS = 3000;     // If no tokens for this long, next tokens get a new message
+const TEXT_FIRST_SEND_DELAY_MS = 2500;
+const TEXT_GAP_NEW_MSG_MS = 3000;
 const TG_MAX_LEN = 4096;
 
 // Allowed user IDs - if set, only these users can interact
@@ -39,7 +46,7 @@ function isUserAllowed(userId) {
   return ALLOWED_USERS.includes(String(userId));
 }
 
-async function setupTelegram(agent, sessions, sendToAgentStream) {
+async function setupTelegram(agent, sessions, sendToAgentStream, { stopCurrentRun } = {}) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return;
 
@@ -62,25 +69,91 @@ async function setupTelegram(agent, sessions, sendToAgentStream) {
     const userId = ctx.from?.id;
     if (!isUserAllowed(userId)) {
       console.log(`[telegram] Blocked user ${userId} (${ctx.from?.username || "unknown"})`);
-      return; // silent ignore
+      return;
     }
     return next();
   });
 
+  // -- /start -------------------------------------------------------
   bot.start((ctx) => {
     ctx.reply(
       "Hey! I'm Moby, your personal AI agent.\n\n" +
         "Just send me a message and I'll help you out. " +
-        "I remember our conversations, so feel free to pick up where we left off."
+        "I remember our conversations, so feel free to pick up where we left off.\n\n" +
+        "Commands:\n" +
+        "/new — fresh conversation\n" +
+        "/stop — abort current task\n" +
+        "/status — show session info"
     );
   });
 
-  bot.command("clear", (ctx) => {
-    const channelId = `telegram:${ctx.chat.id}`;
-    sessions.clear();
-    ctx.reply("🧹 Conversation cleared. Fresh start!");
+  // -- /clear, /new, /reset ----------------------------------------
+  for (const cmd of ["clear", "new", "reset"]) {
+    bot.command(cmd, (ctx) => {
+      sessions.clear();
+      ctx.reply("🧹 Conversation cleared. Fresh start!");
+    });
+  }
+
+  // -- /stop --------------------------------------------------------
+  bot.command("stop", (ctx) => {
+    if (!stopCurrentRun) {
+      ctx.reply("⚠️ Stop not available.");
+      return;
+    }
+    const result = stopCurrentRun(sessions);
+    if (result.stopped) {
+      const parts = ["🛑 Stopped current task."];
+      if (result.queueCleared > 0) {
+        parts.push(`Cleared ${result.queueCleared} queued message(s).`);
+      }
+      ctx.reply(parts.join(" "));
+    } else if (result.queueCleared > 0) {
+      ctx.reply(`🛑 Cleared ${result.queueCleared} queued message(s).`);
+    } else {
+      ctx.reply("Nothing running right now. 👍");
+    }
   });
 
+  // -- /status ------------------------------------------------------
+  bot.command("status", (ctx) => {
+    const sessionId = sessions.getSessionId();
+    const busy = sessions.isBusy();
+    const qLen = sessions.queueLength();
+    const uptime = Math.floor(process.uptime());
+    const uptimeStr =
+      uptime > 3600
+        ? `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m`
+        : `${Math.floor(uptime / 60)}m ${uptime % 60}s`;
+
+    const lines = [
+      `📊 *Session Status*`,
+      ``,
+      `Session: \`${sessionId ? sessionId.slice(0, 12) + "..." : "none"}\``,
+      `Status: ${busy ? "🔴 Busy" : "🟢 Ready"}`,
+      qLen > 0 ? `Queue: ${qLen} message(s) waiting` : `Queue: empty`,
+      `Uptime: ${uptimeStr}`,
+    ];
+
+    if (sessions.lastActivity) {
+      const ago = Math.floor(
+        (Date.now() - new Date(sessions.lastActivity).getTime()) / 1000
+      );
+      const agoStr =
+        ago > 3600
+          ? `${Math.floor(ago / 3600)}h ago`
+          : ago > 60
+            ? `${Math.floor(ago / 60)}m ago`
+            : `${ago}s ago`;
+      lines.push(`Last activity: ${agoStr}`);
+    }
+
+    ctx.reply(lines.join("\n"), { parse_mode: "Markdown" }).catch(() => {
+      ctx.reply(lines.join("\n"));
+    });
+  });
+
+  // -- Text messages ------------------------------------------------
   bot.on("text", (ctx) => {
     const chatId = ctx.chat.id;
     const message = ctx.message.text;
@@ -103,17 +176,6 @@ async function setupTelegram(agent, sessions, sendToAgentStream) {
 
 // ─────────────────────────────────────────────────────────────
 // Message segment manager
-//
-// Manages a sequence of Telegram messages for one agent response.
-// Each "segment" is either a tool-status block or a text block.
-// New segments get new Telegram messages. Tool status and text
-// are never mixed in the same message.
-//
-// Flow for a typical agent response:
-//   tools phase → tool message (edited in place)
-//   text phase  → new text message (streamed via edits)
-//   tools phase → new tool message (edited in place)
-//   text phase  → new text message (streamed via edits)
 // ─────────────────────────────────────────────────────────────
 
 class MessageSegments {
@@ -121,43 +183,32 @@ class MessageSegments {
     this.telegram = telegram;
     this.chatId = chatId;
 
-    // Current phase: null | "tools" | "text"
     this.phase = null;
 
-    // Current tool message state
-    this.toolLines = [];         // { emoji, label, toolName }
+    this.toolLines = [];
     this.toolMessageId = null;
     this.toolMarkdown = true;
     this.toolLastEdited = "";
     this.toolDirty = false;
 
-    // Current text message state
     this.textContent = "";
     this.textMessageId = null;
     this.textMarkdown = true;
     this.textLastEdited = "";
     this.textDirty = false;
 
-    // Edit timer (shared)
     this.editTimer = null;
     this.flushing = false;
     this.flushQueued = false;
 
-    // Track all sent message IDs (for hasSentAnything)
     this.allMessageIds = [];
 
-    // Delayed first-send timer for text messages
     this.textFirstSendTimer = null;
-
-    // Timestamp of the last text token (for gap detection)
     this.lastTokenTime = 0;
   }
 
-  // -- Phase transitions ------------------------------------------
-
   _switchToTools() {
     if (this.phase === "tools") return;
-
     this.phase = "tools";
     this.toolLines = [];
     this.toolMessageId = null;
@@ -168,22 +219,17 @@ class MessageSegments {
 
   _switchToText() {
     if (this.phase === "text") return;
-
     this.phase = "text";
     this.textContent = "";
     this.textMessageId = null;
     this.textMarkdown = true;
     this.textLastEdited = "";
     this.textDirty = false;
-
-    // Clear any pending first-send timer from a previous text segment
     if (this.textFirstSendTimer) {
       clearTimeout(this.textFirstSendTimer);
       this.textFirstSendTimer = null;
     }
   }
-
-  // -- Tool events ------------------------------------------------
 
   addToolStart(name) {
     this._switchToTools();
@@ -215,24 +261,16 @@ class MessageSegments {
     this.toolDirty = true;
   }
 
-  // -- Text events ------------------------------------------------
-
   addToken(text) {
     const now = Date.now();
-
-    // If we're already in a text phase with a sent message, and
-    // there's been a long gap since the last token, start a new
-    // text message so the user gets a fresh notification.
     if (
       this.phase === "text" &&
       this.textMessageId &&
       this.lastTokenTime > 0 &&
       (now - this.lastTokenTime) > TEXT_GAP_NEW_MSG_MS
     ) {
-      // Force a new text segment
       this.phase = null;
     }
-
     this.lastTokenTime = now;
     this._switchToText();
     this.textContent += text;
@@ -240,8 +278,6 @@ class MessageSegments {
     this._ensureTimer();
     this._flushSoon();
   }
-
-  // -- Flush logic ------------------------------------------------
 
   _ensureTimer() {
     if (this.editTimer) return;
@@ -262,14 +298,10 @@ class MessageSegments {
   }
 
   _flushSoon() {
-    // Tools: flush immediately (status indicators, no notification concern)
     if (this.phase === "tools" && !this.toolMessageId && !this.flushing) {
       this.flush();
       return;
     }
-
-    // Text: delay the first send so the notification preview has real content.
-    // Without this, the notification shows just the first word.
     if (this.phase === "text" && !this.textMessageId && !this.textFirstSendTimer) {
       this.textFirstSendTimer = setTimeout(() => {
         this.textFirstSendTimer = null;
@@ -288,7 +320,6 @@ class MessageSegments {
     this.flushing = true;
 
     try {
-      // Flush tool message if dirty
       if (this.toolDirty && this.toolLines.length > 0) {
         const text = this.toolLines.map((t) => `${t.emoji} ${t.label}`).join("\n");
         const truncated = truncate(text);
@@ -313,7 +344,6 @@ class MessageSegments {
         }
       }
 
-      // Flush text message if dirty
       if (this.textDirty && this.textContent) {
         const truncated = truncate(this.textContent);
 
@@ -347,33 +377,22 @@ class MessageSegments {
     }
   }
 
-  // -- Finalize ---------------------------------------------------
-  // Called when the agent stream ends. We do NOT use the full
-  // accumulated response here because it contains text from ALL
-  // segments. Instead we just do a final flush of whatever the
-  // current segment has accumulated via streaming tokens.
-
   async finalize() {
     this.stopTimer();
-
-    // Mark any remaining ⏳ tools as done
     for (const t of this.toolLines) {
       if (t.emoji === "⏳") t.emoji = "✅";
     }
     if (this.toolLines.length > 0) this.toolDirty = true;
-
     await this.flush();
   }
 
   async finalizeError() {
     this.stopTimer();
-
     for (const t of this.toolLines) {
       if (t.emoji === "⏳") t.emoji = "❌";
     }
     if (this.toolLines.length > 0) this.toolDirty = true;
 
-    // Add error to current text message if one exists
     if (this.textMessageId) {
       this.textContent += "\n\n⚠️ _Something went wrong. Try again._";
       this.textDirty = true;
@@ -381,7 +400,6 @@ class MessageSegments {
 
     await this.flush();
 
-    // If we never sent anything, send a standalone error
     if (this.allMessageIds.length === 0) {
       await sendSafe(
         this.telegram,
@@ -408,9 +426,13 @@ async function handleMessage(
     `[telegram:${chatId}] ← "${message.slice(0, 80)}${message.length > 80 ? "..." : ""}"`
   );
 
+  // Send typing indicator immediately (OpenClaw: instant mode)
   await telegram.sendChatAction(chatId, "typing").catch(() => {});
 
   const segments = new MessageSegments(telegram, chatId);
+
+  // Track whether we showed a queued message (to edit it away later)
+  let queuedMessageId = null;
 
   const typingInterval = setInterval(() => {
     if (!segments.hasSentAnything()) {
@@ -423,10 +445,19 @@ async function handleMessage(
       agent, sessions, channelId, message,
       {
         onToken(text) {
+          // If we had a queued notice, delete it now that we're streaming
+          if (queuedMessageId) {
+            telegram.deleteMessage(chatId, queuedMessageId).catch(() => {});
+            queuedMessageId = null;
+          }
           segments.addToken(text);
         },
 
         onToolStart(name) {
+          if (queuedMessageId) {
+            telegram.deleteMessage(chatId, queuedMessageId).catch(() => {});
+            queuedMessageId = null;
+          }
           segments.addToolStart(name);
         },
 
@@ -441,10 +472,28 @@ async function handleMessage(
         onError(err) {
           console.error(`[telegram:${chatId}] Stream error: ${err}`);
         },
+
+        // Queue feedback: show user their message is queued
+        onQueued(position) {
+          const queueMsg =
+            position === 1
+              ? "⏳ _Working on something else, I'll get to this next..._"
+              : `⏳ _Queued (position ${position}). I'll get to this soon..._`;
+
+          sendSafe(telegram, chatId, queueMsg).then((sent) => {
+            if (sent) queuedMessageId = sent.message_id;
+          });
+        },
       }
     );
 
     clearInterval(typingInterval);
+
+    // Clean up queued notice if still showing
+    if (queuedMessageId) {
+      telegram.deleteMessage(chatId, queuedMessageId).catch(() => {});
+      queuedMessageId = null;
+    }
 
     if (!response && !segments.hasSentAnything()) {
       await telegram.sendMessage(
@@ -454,13 +503,22 @@ async function handleMessage(
       return;
     }
 
-    // finalize() just flushes current segment state - does NOT
-    // use the full `response` to avoid duplicating text across messages
     await segments.finalize();
 
     console.log(`[telegram:${chatId}] → ${(response || "").length} chars`);
   } catch (err) {
     clearInterval(typingInterval);
+
+    if (queuedMessageId) {
+      telegram.deleteMessage(chatId, queuedMessageId).catch(() => {});
+    }
+
+    // Handle aborted runs gracefully
+    if (err.name === "AbortError" || err.message?.includes("aborted") || err.message?.includes("Queue cleared")) {
+      console.log(`[telegram:${chatId}] Run aborted/cleared`);
+      return;
+    }
+
     console.error(`[telegram:${chatId}] Error:`, err.message);
     await segments.finalizeError();
   }
@@ -475,7 +533,6 @@ function truncate(text) {
   return text.slice(0, TG_MAX_LEN - 4) + " ...";
 }
 
-// sendSafe returns { message_id, usedMarkdown } or null
 async function sendSafe(telegram, chatId, text) {
   try {
     const msg = await telegram.sendMessage(chatId, text, { parse_mode: "Markdown" });
@@ -498,7 +555,6 @@ async function editSafe(telegram, chatId, messageId, text, useMarkdown) {
     return true;
   } catch (err) {
     if (err.message?.includes("not modified")) return true;
-    // If markdown edit failed, retry without markdown
     if (useMarkdown) {
       try {
         await telegram.editMessageText(chatId, messageId, undefined, text);

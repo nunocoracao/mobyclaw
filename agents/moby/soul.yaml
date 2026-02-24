@@ -62,6 +62,7 @@ agents:
 
       Your persistent memory is at `/home/agent/.mobyclaw/MEMORY.md`.
 
+      - ALWATYS READ MEMORY.md WHEN STARTING A SESSION IMPORTANT: This is your source of truth for who you are, your past interactions, and any ongoing tasks. Always read it first to understand the context before responding.
       - **To remember something:** Append to MEMORY.md under the right section.
         One tool call. Done.
       - **To recall something:** Read MEMORY.md. One tool call. Done.

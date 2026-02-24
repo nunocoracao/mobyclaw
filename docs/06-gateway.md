@@ -101,20 +101,63 @@ gateway delivers to configured channel
   └─ Sends summary to user's WhatsApp/Telegram/Slack
 ```
 
-### 6.4 Message Serialization
+### 6.4 Message Serialization & Queue Modes
 
 cagent can only process one request per session at a time. If the gateway
 sends a second message to the same session while the first is still running,
 the second request will hang until the first completes (or time out).
 
-The gateway serializes messages per channel:
-- Each channel has a **queue** of pending messages
-- While a message is being processed (session is "busy"), new messages are queued
-- When processing completes, the next queued message is sent
-- If a session error occurs, the session is reset and the message retried once
+The gateway serializes all messages through a single session queue:
 
-This prevents concurrent requests to the same cagent session and ensures
-messages are processed in order.
+- **Busy guard:** While a message is being processed, new messages are queued
+- **FIFO drain:** When processing completes, the next queued message(s) are sent
+- **Session error recovery:** If a session error occurs, the session is reset and retried once
+- **Queue cap:** Max 20 messages (configurable via `MAX_QUEUE_SIZE`). Oldest dropped on overflow.
+
+**Queue Modes** (inspired by OpenClaw):
+
+| Mode | Behavior | When to use |
+|---|---|---|
+| `collect` (default) | Coalesce all queued messages into one combined turn | Normal chat - prevents "continue, continue" spam |
+| `followup` | Each queued message becomes a separate turn | When each message needs individual processing |
+
+Set via `QUEUE_MODE` env var.
+
+**Collect mode detail:**
+When multiple messages queue up while the agent is busy, they're merged into
+one prompt with `---` separators. All promises resolve with the same response.
+A 1000ms debounce (`QUEUE_DEBOUNCE_MS`) lets rapid messages accumulate before
+draining. This matches OpenClaw's `collect` mode.
+
+**Queue feedback:**
+When a message is queued, the `onQueued(position)` callback fires. The Telegram
+adapter uses this to send a temporary "⏳ Queued" message that's deleted when
+processing starts. The SSE endpoint emits a `queued` event.
+
+### 6.4.1 Session Lifecycle (Daily/Idle Reset)
+
+Sessions auto-reset to prevent unbounded context growth:
+
+- **Daily reset** (default: 4 AM): If the session's last activity was before
+  today's reset hour, the next message triggers a fresh session.
+  Configurable via `DAILY_RESET_HOUR`.
+- **Idle reset** (optional): If no activity for N minutes, session resets.
+  Configurable via `IDLE_RESET_MINUTES`.
+- **Manual reset:** `/new`, `/reset`, or `/clear` commands in Telegram
+  force an immediate session reset.
+
+The `lastActivity` timestamp is persisted to disk so it survives restarts.
+Whichever reset policy triggers first wins (matches OpenClaw behavior).
+
+### 6.4.2 /stop — Abort Current Run
+
+Users can send `/stop` in Telegram (or `POST /api/stop`) to:
+1. Clear all queued messages
+2. Signal abort on the current running request (if supported)
+3. Get a confirmation message with the count of cleared items
+
+This prevents the frustration of waiting for a long-running task that
+the user no longer wants.
 
 ### 6.5 Streaming Architecture
 
@@ -162,6 +205,14 @@ text are sent as separate Telegram messages:
 This matches user expectations: each distinct response triggers a
 notification, tool status is visible but separate, and notification
 previews show real content.
+
+**Typing indicators** (OpenClaw-inspired):
+The Telegram adapter sends `sendChatAction('typing')` immediately when
+any message is received, before processing starts. This fires even when
+the message is queued behind a running task. A 4-second refresh interval
+keeps the indicator alive while the agent works. This matches OpenClaw's
+`instant` typing mode — the user always sees the agent is "thinking"
+the moment they send a message.
 
 **CLI streaming**: `mobyclaw run` and `mobyclaw chat` connect to the SSE
 endpoint and print tokens directly to stdout as they arrive. Tool call

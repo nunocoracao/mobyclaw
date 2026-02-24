@@ -6,6 +6,12 @@
 //
 // Single session architecture: one cagent session shared across
 // all channels. Messages are serialized through a FIFO queue.
+//
+// Features:
+//   - Session lifecycle (daily/idle reset)
+//   - Queue modes: collect (coalesce) or followup
+//   - /stop abort support
+//   - Typing indicators + queue feedback
 // -----------------------------------------------------------------
 
 const express = require("express");
@@ -17,7 +23,7 @@ const { AdapterRegistry } = require("./adapter-registry");
 const { ChannelStore } = require("./channels");
 const { ScheduleStore, startSchedulerLoop } = require("./scheduler");
 const { startHeartbeat } = require("./heartbeat");
-const { sendToAgent, sendToAgentStream } = require("./orchestrator");
+const { sendToAgent, sendToAgentStream, stopCurrentRun } = require("./orchestrator");
 const { registerRoutes } = require("./routes");
 const { setupTelegram } = require("./adapters/telegram");
 
@@ -37,7 +43,6 @@ process.on("unhandledRejection", (err) => {
 // -----------------------------------------------------------------
 
 function addChannelContext(channelStore, channelId, message) {
-  // Skip internal channels
   if (
     channelId.startsWith("heartbeat:") ||
     channelId.startsWith("api:") ||
@@ -84,7 +89,17 @@ async function main() {
 
   // Single session store - persisted to disk
   const sessionPath = path.join(MOBYCLAW_HOME, "session.json");
-  const session = new SessionStore(sessionPath);
+  const session = new SessionStore(sessionPath, {
+    queueMode: process.env.QUEUE_MODE || "collect",
+    debounceMs: parseInt(process.env.QUEUE_DEBOUNCE_MS || "1000", 10),
+    maxQueueSize: parseInt(process.env.MAX_QUEUE_SIZE || "20", 10),
+    dailyResetHour: process.env.DAILY_RESET_HOUR !== undefined
+      ? parseInt(process.env.DAILY_RESET_HOUR, 10)
+      : 4,
+    idleResetMinutes: process.env.IDLE_RESET_MINUTES
+      ? parseInt(process.env.IDLE_RESET_MINUTES, 10)
+      : null,
+  });
 
   const registry = new AdapterRegistry();
 
@@ -98,12 +113,21 @@ async function main() {
   await agent.waitForReady(120_000);
   console.log(`Agent is ready`);
 
+  // -- Config summary -----------------------------------------------
+  console.log(`  Queue mode: ${session.queueMode}`);
+  console.log(`  Daily reset: ${session.dailyResetHour}:00`);
+  if (session.idleResetMinutes) {
+    console.log(`  Idle reset: ${session.idleResetMinutes}m`);
+  }
+
   // -- Messaging adapters -------------------------------------------
 
   const sendWithContext = createContextSender(channelStore);
 
   if (process.env.TELEGRAM_BOT_TOKEN) {
-    const telegramSend = await setupTelegram(agent, session, sendWithContext);
+    const telegramSend = await setupTelegram(agent, session, sendWithContext, {
+      stopCurrentRun,
+    });
     if (telegramSend) registry.register("telegram", telegramSend);
     console.log("Telegram adapter loaded");
   } else {
@@ -132,6 +156,7 @@ async function main() {
     registry,
     sendToAgent,
     sendToAgentStream,
+    stopCurrentRun,
   });
 
   app.listen(PORT, "0.0.0.0", () => {

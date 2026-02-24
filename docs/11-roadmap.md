@@ -44,6 +44,29 @@ Success criteria:
 - Recurring tasks (daily briefings, periodic backups) run reliably
 - `./mobyclaw status` shows connected channels
 
+### Phase 2.5 - Session & Queue UX (OpenClaw-inspired) ✅ COMPLETE
+
+**Goal:** Polished session management and user experience, inspired by OpenClaw patterns.
+
+Deliverables:
+- **Typing indicators**: Instant `sendChatAction('typing')` on message receipt, 4s refresh
+- **Queue feedback**: Temporary "⏳ Queued" message in Telegram when message is queued
+- **Collect queue mode**: Coalesces rapid queued messages into one combined turn (default)
+- **Session lifecycle**: Daily reset at 4 AM, optional idle reset, /new + /reset commands
+- **Queue cap**: Max 20 messages with oldest-drop overflow policy
+- **Debounce**: 1000ms debounce before draining collected messages
+- **/stop command**: Abort current run + clear queue via Telegram or API
+- **/status command**: Session info, queue length, uptime in Telegram
+- **SSE queued event**: Streaming endpoint emits `queued` event for programmatic clients
+
+Success criteria:
+- User sees typing indicator immediately when sending a message
+- User sees feedback when message is queued behind a running task
+- Rapid "continue, continue" messages are coalesced into one turn
+- Sessions reset daily at 4 AM (fresh context each day)
+- /stop aborts long-running tasks without restarting the agent
+- /new starts a fresh conversation
+
 ### Phase 3 - Workspace + Integrations
 
 **Goal:** Agent can access local files. More messaging channels.

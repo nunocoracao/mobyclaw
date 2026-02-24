@@ -9,6 +9,7 @@
 //   POST /api/schedules   — Create a schedule
 //   DELETE /api/schedules/:id — Cancel a schedule
 //   POST /api/deliver     — Push a message to a channel
+//   POST /api/stop        — Stop current run + clear queue
 //   POST /prompt          — Buffered agent prompt
 //   POST /prompt/stream   — Streaming agent prompt (SSE)
 // ─────────────────────────────────────────────────────────────
@@ -18,7 +19,7 @@ const { formatToolLabel } = require("./tool-labels");
 
 function registerRoutes(
   app,
-  { agent, sessions, scheduleStore, channelStore, registry, sendToAgent, sendToAgentStream }
+  { agent, sessions, scheduleStore, channelStore, registry, sendToAgent, sendToAgentStream, stopCurrentRun }
 ) {
   // ── Health & Status ─────────────────────────────────────
 
@@ -41,6 +42,8 @@ function registerRoutes(
       session_id: sessions.getSessionId() || null,
       session_busy: sessions.isBusy(),
       queue_length: sessions.queueLength(),
+      queue_mode: sessions.queueMode,
+      last_activity: sessions.lastActivity,
       schedules_pending: pending,
       uptime: process.uptime(),
     });
@@ -122,6 +125,19 @@ function registerRoutes(
     }
   });
 
+  // ── Stop API ────────────────────────────────────────────
+
+  app.post("/api/stop", (_req, res) => {
+    if (!stopCurrentRun) {
+      return res.status(501).json({ error: "Stop not available" });
+    }
+    const result = stopCurrentRun(sessions);
+    console.log(
+      `[api] Stop: stopped=${result.stopped}, queueCleared=${result.queueCleared}`
+    );
+    res.json(result);
+  });
+
   // ── Buffered prompt ─────────────────────────────────────
 
   app.post("/prompt", async (req, res) => {
@@ -154,8 +170,6 @@ function registerRoutes(
 
     const channelId = session_id || "api:direct";
 
-    // PassThrough stream piped to response — avoids buffering
-    // issues with res.write() from nested I/O callbacks
     const pass = new PassThrough();
 
     res.writeHead(200, {
@@ -207,6 +221,9 @@ function registerRoutes(
           },
           onError(err) {
             sseWrite("error", { message: err });
+          },
+          onQueued(position) {
+            sseWrite("queued", { position });
           },
         }
       );
