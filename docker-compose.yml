@@ -18,10 +18,12 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ${MOBYCLAW_HOME:-~/.mobyclaw}:/home/agent/.mobyclaw
+      - ${MOBYCLAW_HOME:-~/.mobyclaw}/gh:/home/agent/.config/gh
       - .:/source
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GH_TOKEN=${GH_TOKEN:-}
     restart: unless-stopped
     networks:
       - mobyclaw
