@@ -7,6 +7,8 @@ RUN npm install --production
 
 COPY src/ src/
 
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 # MCP Streamable HTTP port
 EXPOSE 8081
 # Admin API port
