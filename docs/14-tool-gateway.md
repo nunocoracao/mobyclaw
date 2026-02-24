@@ -72,13 +72,22 @@ between the agent and tool management.
 │                                                             │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │  Admin API (Express, port 3100)                      │    │
+│  │  POST /servers/:id/auth/start  — begin OAuth flow    │    │
+│  │  GET  /servers/:id/auth/status — check auth state    │    │
+│  │  GET  /auth/callback           — OAuth redirect      │    │
 │  │  GET  /servers         — list configured servers     │    │
 │  │  POST /servers/:id/connect    — connect a server     │    │
 │  │  POST /servers/:id/disconnect — disconnect           │    │
-│  │  GET  /servers/:id/auth/status — auth state          │    │
-│  │  GET  /servers/:id/auth/start  — begin OAuth flow    │    │
-│  │  GET  /auth/callback           — OAuth redirect      │    │
 │  └─────────────────────────────────────────────────────┘    │
+│                                                             │
+│  Auth flow (chat-mediated):                                 │
+│    1. User tells Moby: "connect notion"                     │
+│    2. Moby calls POST /servers/notion/auth/start            │
+│    3. Gateway returns { auth_url }                          │
+│    4. Moby sends auth_url to user via Telegram              │
+│    5. User clicks → authorizes → redirect to /auth/callback │
+│    6. Gateway stores tokens                                 │
+│    7. Moby polls auth/status → confirms to user             │
 │                                                             │
 │  Exposes: MCP server on stdio (primary) or HTTP :8081       │
 │  Tool namespace: notion:search, notion:fetch, gdrive:search │
@@ -208,22 +217,108 @@ The agent sees these as distinct tools with full JSON Schema descriptions.
 
 ## Auth Models
 
-### API Key (simple)
-- Stored in `servers.yaml` or environment variable
-- Examples: self-hosted Notion MCP, custom servers
+All auth flows are **chat-mediated** — the user never needs to SSH into the
+server, run CLI commands, or open admin UIs. Moby handles it conversationally
+through whatever channel the user is already on (Telegram, CLI, etc.).
 
-### OAuth 2.0 + PKCE (Notion remote, Google)
-- One-time browser flow via admin API
-- Tokens stored encrypted in `tool-auth/` directory
-- Auto-refresh before expiry
-- Re-auth notification on token revocation
+### Pattern 1: Device Code Flow (GitHub-style)
 
-### OAuth flow for headless Docker:
-1. User runs `./mobyclaw auth notion` (or visits admin API URL)
-2. Gateway returns auth URL → user opens in browser
-3. Browser redirects to `http://localhost:3100/auth/callback`
-4. Gateway stores tokens, confirms success
-5. Agent can now use Notion tools
+Services that support OAuth device code flow (RFC 8628).
+No callback URL needed — works from any device.
+
+```
+User: "connect to github"
+Moby: "Open https://github.com/login/device and enter code: ABCD-1234"
+User: [does it on phone/desktop, any device]
+Moby: "✅ GitHub connected! I can now access your repos."
+```
+
+**How it works internally:**
+1. Moby (or tool-gateway) calls the service's device authorization endpoint
+2. Gets back: `verification_uri` + `user_code`
+3. Sends both to user via the active messaging channel
+4. Polls the token endpoint until user completes auth
+5. Stores tokens
+
+**Services:** GitHub (`gh auth login` already works this way)
+
+### Pattern 2: Chat-Mediated OAuth Redirect (Notion-style)
+
+Services that only support authorization_code + PKCE (no device code).
+Requires a callback URL, but the flow is still initiated through chat.
+
+```
+User: "connect notion"
+Moby: "Click this link to authorize Notion:
+       https://mcp.notion.com/authorize?client_id=...&redirect_uri=...
+       (opens in your browser)"
+User: [clicks link, authorizes on Notion's consent screen]
+      [browser redirects to tool-gateway callback URL]
+Moby: "✅ Notion connected! I can now search and manage your workspace."
+```
+
+**How it works internally:**
+1. User tells Moby to connect a service
+2. Moby calls tool-gateway: `POST /servers/notion/auth/start`
+3. Tool-gateway:
+   a. Discovers OAuth endpoints (RFC 9470 → RFC 8414)
+   b. Registers as OAuth client (dynamic registration, RFC 7591)
+   c. Generates PKCE code_verifier + code_challenge
+   d. Returns `{ auth_url: "https://...", state: "..." }`
+4. Moby sends the auth_url to the user via Telegram/CLI
+5. User clicks, authorizes, browser redirects to callback
+6. Tool-gateway receives callback at `/auth/callback?code=...`
+7. Tool-gateway exchanges code for tokens, stores them
+8. Moby polls `GET /servers/notion/auth/status` → `{ connected: true }`
+9. Moby confirms to user
+
+**Callback URL handling:**
+- Default: `http://localhost:3100/auth/callback` (works when user's browser
+  is on the same machine as Docker)
+- For remote Docker hosts: user can set `TOOL_GATEWAY_CALLBACK_URL` env var,
+  or use a tunnel (e.g., ngrok) temporarily
+- Fallback: callback page displays the auth code with instructions to
+  paste it back to Moby ("copy-paste mode") — works from any device
+
+**Services:** Notion remote MCP, Google (no device code support)
+
+**Notion-specific findings:**
+- OAuth metadata: `https://mcp.notion.com/.well-known/oauth-authorization-server`
+- Grant types: `authorization_code`, `refresh_token` (NO device code)
+- Supports PKCE: S256 and plain
+- Supports dynamic client registration at `/register`
+- Access tokens expire after 1 hour
+- Refresh tokens rotate on use (keep max 2 valid at a time)
+
+### Pattern 3: API Key (simple)
+
+Services that use a static token. User tells Moby the key, or it's in the
+environment.
+
+```
+User: "connect to my custom MCP server, the API key is sk-abc123"
+Moby: [stores key via tool-gateway]
+Moby: "✅ Connected! I see 5 tools available."
+```
+
+**Services:** Self-hosted MCP servers, custom APIs
+
+### Auth Store
+
+All credentials are stored by the tool-gateway in `~/.mobyclaw/tool-auth/`:
+
+```
+~/.mobyclaw/tool-auth/
+  notion.json     # { access_token, refresh_token, expires_at, client_id, ... }
+  gdrive.json     # { access_token, refresh_token, ... }
+  custom.json     # { api_key: "..." }
+```
+
+- Tokens encrypted at rest (AES-256 with key from `TOOL_GATEWAY_SECRET` env var)
+- Auto-refresh: gateway refreshes tokens 5 min before expiry
+- Revocation detection: if refresh fails with `invalid_grant`, gateway marks
+  server as disconnected and Moby notifies user on next heartbeat
+- Re-auth: user just says "reconnect notion" and the flow repeats
 
 ## servers.yaml Format
 
@@ -304,20 +399,22 @@ The agent uses these via `shell` tool calls:
 
 ### Phase 2: Notion Integration
 - [ ] Add Notion remote MCP as upstream server
-- [ ] Implement OAuth 2.0 + PKCE flow
-- [ ] Add `./mobyclaw auth notion` CLI command
+- [ ] Implement OAuth 2.0 + PKCE flow (chat-mediated)
+- [ ] Auth start/status/callback API endpoints on tool-gateway
+- [ ] Teach Moby (via soul.yaml) how to initiate "connect notion" flow
+- [ ] Test: user says "connect notion" → gets link via Telegram → authorizes → Moby confirms
 - [ ] Test: agent searches Notion, reads pages, creates pages
 
-### Phase 3: Auth & Admin
-- [ ] Admin API for server management
-- [ ] Encrypted token storage
-- [ ] Auto-refresh logic
-- [ ] Re-auth notification flow
+### Phase 3: Auth Lifecycle
+- [ ] Encrypted token storage (AES-256)
+- [ ] Auto-refresh logic (5 min before expiry)
+- [ ] Re-auth notification on heartbeat when token is revoked
+- [ ] Copy-paste fallback for remote Docker hosts
 
 ### Phase 4: More Servers
-- [ ] Google Drive MCP
+- [ ] Google Drive MCP (OAuth redirect pattern)
 - [ ] Other MCP servers as needed
-- [ ] Dynamic connect/disconnect
+- [ ] Dynamic connect/disconnect via chat
 
 ## Open Questions
 
@@ -325,8 +422,13 @@ The agent uses these via `shell` tool calls:
   or do we need a real binary for proper MCP JSON-RPC streaming?
 - **Tool list caching**: Should cagent's MCP toolset re-discover tools on each
   session, or does the bridge need to cache the tool list?
-- **OAuth in Docker**: The callback redirect to localhost:3100 works if the user
-  is on the same machine. For remote Docker hosts, we'd need to expose the port
-  or use a tunnel.
+- **Notion OAuth callback from phone**: If user clicks Notion auth link from
+  Telegram on their phone, the redirect to `localhost:3100` won't work.
+  Copy-paste fallback needed: callback page shows auth code, user sends
+  it back to Moby. Or: Moby detects channel is mobile and uses copy-paste
+  mode by default.
 - **Rate limiting**: Notion has 180 req/min. Should the gateway enforce this or
   let the upstream handle errors?
+- **Soul.yaml dynamic update**: When tool-gateway connects a new server, the
+  agent's tool list changes. Does cagent pick this up automatically via MCP
+  tools/list, or does the session need a restart?
