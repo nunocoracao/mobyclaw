@@ -15,6 +15,7 @@
 // -----------------------------------------------------------------
 
 const DEBOUNCE_MS = parseInt(process.env.QUEUE_DEBOUNCE_MS || "1000", 10);
+const DASHBOARD_URL = process.env.DASHBOARD_URL || "http://dashboard:7777";
 
 let _drainTimer = null;
 
@@ -62,6 +63,10 @@ async function processMessageStream(
     console.log(
       `[${channelId}] <- agent (${response.length} chars)${response.length === 0 ? " [EMPTY]" : ""}`
     );
+
+    // Log conversation (fire-and-forget)
+    logConversation(channelId, message, response, 0);
+
     return response;
   } catch (err) {
     // If this was an intentional abort, don't retry
@@ -234,6 +239,38 @@ function stopCurrentRun(session) {
   }
 
   return { stopped: true, queueCleared: cleared };
+}
+
+/**
+ * Log a completed conversation turn to the dashboard API.
+ * Fire-and-forget - never blocks the response flow.
+ */
+function logConversation(channelId, userMessage, agentResponse, toolCount) {
+  // Skip heartbeat/system messages
+  if (channelId === "heartbeat" || channelId === "system") return;
+  // Skip empty exchanges
+  if (!userMessage || !agentResponse) return;
+
+  const snippet = (text, maxLen) =>
+    text.length > maxLen ? text.slice(0, maxLen) + "..." : text;
+
+  const payload = {
+    timestamp: new Date().toISOString(),
+    channel: channelId,
+    summary: snippet(userMessage, 200),
+    topics: [],
+    key_facts: [],
+    message_count: 1,
+  };
+
+  fetch(`${DASHBOARD_URL}/api/conversations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).catch((err) => {
+    // Silent fail - conversation logging is best-effort
+    console.error(`[orchestrator] Conversation log failed: ${err.message}`);
+  });
 }
 
 module.exports = {

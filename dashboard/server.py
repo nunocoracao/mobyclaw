@@ -390,13 +390,37 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         # Conversation API
         elif path == "/api/conversations":
             query = params.get("q", [None])[0]
+            channel = params.get("channel", [None])[0]
+            limit = int(params.get("limit", ["50"])[0])
+            conn = get_db()
             if query:
-                self.send_json(search_conversations(query))
+                results = [dict(row) for row in conn.execute(
+                    "SELECT * FROM conversations WHERE summary LIKE ? OR topics LIKE ? OR key_facts LIKE ? ORDER BY timestamp DESC LIMIT ?",
+                    (f"%{query}%", f"%{query}%", f"%{query}%", limit)
+                ).fetchall()]
+            elif channel:
+                results = [dict(row) for row in conn.execute(
+                    "SELECT * FROM conversations WHERE channel=? ORDER BY timestamp DESC LIMIT ?",
+                    (channel, limit)
+                ).fetchall()]
             else:
-                conn = get_db()
-                convs = [dict(row) for row in conn.execute("SELECT * FROM conversations ORDER BY timestamp DESC LIMIT 50").fetchall()]
-                conn.close()
-                self.send_json(convs)
+                results = [dict(row) for row in conn.execute(
+                    "SELECT * FROM conversations ORDER BY timestamp DESC LIMIT ?", (limit,)
+                ).fetchall()]
+            conn.close()
+            self.send_json(results)
+        elif path == "/api/conversations/stats":
+            conn = get_db()
+            stats = {
+                "total": conn.execute("SELECT COUNT(*) as cnt FROM conversations").fetchone()["cnt"],
+                "today": conn.execute("SELECT COUNT(*) as cnt FROM conversations WHERE timestamp LIKE ?",
+                    (datetime.now(timezone.utc).strftime("%Y-%m-%d") + "%",)).fetchone()["cnt"],
+                "by_channel": {row["channel"]: row["cnt"] for row in conn.execute(
+                    "SELECT channel, COUNT(*) as cnt FROM conversations GROUP BY channel"
+                ).fetchall()},
+            }
+            conn.close()
+            self.send_json(stats)
 
         # Lessons API
         elif path == "/api/lessons":
