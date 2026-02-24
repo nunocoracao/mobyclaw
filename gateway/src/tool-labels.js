@@ -7,7 +7,12 @@
 // ─────────────────────────────────────────────────────────────
 
 const TOOL_LABELS = {
+  // Built-in cagent tools
   shell:                 "Running command",
+  run_background_job:    "Starting background job",
+  list_background_jobs:  "Checking background jobs",
+  view_background_job:   "Viewing job output",
+  stop_background_job:   "Stopping background job",
   read_file:             "Reading file",
   write_file:            "Writing file",
   edit_file:             "Editing file",
@@ -17,6 +22,29 @@ const TOOL_LABELS = {
   list_directory:        "Listing directory",
   fetch:                 "Fetching URL",
   think:                 "Thinking deeply",
+
+  // Tool-gateway: lightweight web tools
+  browser_fetch:         "Fetching page",
+  browser_search:        "Searching the web",
+  weather_get:           "Checking weather",
+
+  // Tool-gateway: browser automation (Playwright)
+  browser_navigate:      "Navigating to page",
+  browser_snapshot:      "Reading page content",
+  browser_screenshot:    "Taking screenshot",
+  browser_click:         "Clicking element",
+  browser_type:          "Typing text",
+  browser_fill_form:     "Filling form",
+  browser_select_option: "Selecting option",
+  browser_hover:         "Hovering element",
+  browser_press_key:     "Pressing key",
+  browser_scroll:        "Scrolling page",
+  browser_back:          "Going back",
+  browser_forward:       "Going forward",
+  browser_wait:          "Waiting",
+  browser_tabs:          "Managing tabs",
+  browser_close:         "Closing browser",
+  browser_eval:          "Running JavaScript",
 };
 
 function formatToolLabel(name, args) {
@@ -64,6 +92,34 @@ function extractDetail(name, args) {
 
       case "think":
         return null;
+
+      // Tool-gateway tools
+      case "browser_fetch":
+        return truncate(args.url, 60) || null;
+
+      case "browser_search":
+        return args.query ? `"${truncate(args.query, 40)}"` : null;
+
+      case "weather_get":
+        return args.location || null;
+
+      case "browser_navigate":
+        return truncate(args.url, 60) || null;
+
+      case "browser_click":
+        return args.element ? truncate(args.element, 50) : null;
+
+      case "browser_type":
+        return args.element ? truncate(args.element, 40) : null;
+
+      case "browser_press_key":
+        return args.key || null;
+
+      case "browser_wait":
+        return args.text ? `"${truncate(args.text, 30)}"` : args.time ? `${args.time}s` : null;
+
+      case "browser_eval":
+        return truncate(args.expression, 50) || null;
 
       default:
         return null;

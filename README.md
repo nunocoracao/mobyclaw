@@ -338,13 +338,14 @@ the [online docs](https://nunocoracao.github.io/mobyclaw/docs/).
 
 ## Roadmap
 
-- [x] **Phase 1** - Agent in a box (CLI, memory, Docker Compose)
-- [x] **Phase 2** - Gateway + Telegram streaming, heartbeat, scheduling, reminders
-- [x] **Phase 2.5** - OpenClaw-inspired session UX (queue, collect mode, /stop, /status)
-- [x] **Phase 2.7** - Tool gateway (web browsing, search, fetch, weather, 19 MCP tools)
-- [x] **Phase 2.8** - Dashboard service, task API, maintenance scripts, code/data separation
-- [ ] **Phase 3** - More messaging channels, webhook ingress, vector memory search
-- [ ] **Phase 4** - Production hardening (seccomp, network policy, monitoring)
+- [x] **Phase 1** — Agent in a box (CLI, memory, Docker Compose)
+- [x] **Phase 2** — Gateway + Telegram streaming, heartbeat, scheduling, reminders
+- [x] **Phase 2.5** — Session UX (queue, collect mode, /stop, /status)
+- [x] **Phase 2.7** — Tool gateway (web browsing, search, fetch, weather, 19 MCP tools)
+- [x] **Phase 2.8** — Dashboard, task API, maintenance scripts, code/data separation
+- [ ] **Phase 3** — Read-only integrations (Notion, Gmail, Calendar, Slack)
+- [ ] **Phase 4** — More messaging channels, vector memory, webhook ingress
+- [ ] **Phase 5** — Production hardening (seccomp, network policy, monitoring)
 
 ---
 
