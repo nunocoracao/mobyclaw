@@ -70,6 +70,7 @@ platform.
 
 Moby lives at `agents/moby/` and has:
 - `soul.yaml` — Moby's personality, model, tools, and behavioral guidelines (all-in-one)
+- `defaults/` — Default files copied to ~/.mobyclaw/ on init (MEMORY.md, HEARTBEAT.md, TASKS.md)
 
 ### 2.3 Trigger Sources
 
@@ -233,10 +234,15 @@ container. This gives the agent read-write access to all project files:
 │   ├── Dockerfile                # Gateway image
 │   ├── package.json              # Gateway dependencies
 │   └── src/
-│       ├── index.js              # Express app, endpoints
-│       ├── agent-client.js       # HTTP client for cagent
-│       ├── sessions.js           # Session store + queuing
-│       ├── scheduler.js          # Schedules + heartbeat
+│       ├── index.js              # Main entry — wires modules (~144 lines)
+│       ├── agent-client.js       # HTTP client for cagent API + SSE
+│       ├── orchestrator.js       # Session lifecycle + overflow sessions
+│       ├── routes.js             # Express route handlers
+│       ├── sessions.js           # Session store (channel→session mapping)
+│       ├── scheduler.js          # Schedule CRUD + scheduler loop
+│       ├── heartbeat.js          # Periodic agent wake-up
+│       ├── channels.js           # Persistent known-channel store
+│       ├── adapter-registry.js   # Platform adapter routing
 │       ├── tool-labels.js        # Tool name formatting
 │       └── adapters/telegram.js  # Telegram adapter
 ├── architecture.md               # Design documentation
@@ -305,59 +311,59 @@ by restarts since they're bind-mounted from the host.
 │  │  │                                                         │   │  │
 │  │  │  ┌────────────┐ ┌──────────┐ ┌──────────────────────┐ │   │  │
 │  │  │  │  Messaging  │ │ Session  │ │     Scheduler        │ │   │  │
-│  │  │  │  Adapters   │ │ Store    │ │  (Heartbeat + Cron)  │ │   │  │
-│  │  │  │ TG/WA/DC/SL│ │          │ │                      │ │   │  │
+│  │  │  │  Adapters   │ │ Store +  │ │  + Heartbeat         │ │   │  │
+│  │  │  │ TG/WA/DC/SL│ │ Overflow │ │                      │ │   │  │
 │  │  │  └──────┬─────┘ └──────────┘ └──────────┬───────────┘ │   │  │
 │  │  │         │                                │              │   │  │
-│  │  │         └────────────┬───────────────────┘              │   │  │
-│  │  │                      │                                   │   │  │
-│  │  │              HTTP to agent container                     │   │  │
-│  │  │                      │                                   │   │  │
-│  │  │  :3000 (control API) │                                   │   │  │
-│  │  └──────────────────────┼───────────────────────────────┘   │  │
-│  │                         │                                     │  │
-│  │                         ▼                                     │  │
+│  │  │    ┌────┴─────┐ ┌──────────┐ ┌──────────┴───────────┐ │   │  │
+│  │  │    │ Adapter   │ │ Channel  │ │    Orchestrator      │ │   │  │
+│  │  │    │ Registry  │ │ Store    │ │  (session lifecycle)  │ │   │  │
+│  │  │    └──────────┘ └──────────┘ └──────────┬───────────┘ │   │  │
+│  │  │                                         │              │   │  │
+│  │  │              HTTP + SSE to agent         │              │   │  │
+│  │  │                                         │              │   │  │
+│  │  │  :3000 (REST API + SSE streaming)       │              │   │  │
+│  │  └─────────────────────────────────────────┼──────────┘   │  │
+│  │                                             │               │  │
+│  │                                             ▼               │  │
 │  │  ┌───────────────────────────────────────────────────────┐   │  │
 │  │  │                     moby                               │   │  │
 │  │  │              (agent container)                          │   │  │
 │  │  │         cagent serve api soul.yaml                     │   │  │
 │  │  │                                                         │   │  │
-│  │  │  instruction │ tools │ memory r/w │ workspace access    │   │  │
+│  │  │  tools: shell │ filesystem │ fetch │ think              │   │  │
 │  │  │                                                         │   │  │
-│  │  │  :8080 (cagent HTTP API)                               │   │  │
+│  │  │  :8080 (cagent HTTP API + SSE)                         │   │  │
 │  │  └──────────┬────────────────────────────────┬────────────┘   │  │
 │  │             │                                │                 │  │
-│  │        MCP stdio                        MCP stdio              │  │
+│  │     ~/.mobyclaw/ (bind mount)       /source (bind mount)       │  │
+│  │     memory, tasks, soul.yaml        project source code        │  │
+│  │     schedules, channels             (self-modification)        │  │
 │  │             │                                │                 │  │
 │  │  ┌──────────┴──────────┐     ┌───────────────┴──────────┐     │  │
-│  │  │     workspace       │     │        memory            │     │  │
-│  │  │   (MCP server)      │     │     (MCP server)         │     │  │
-│  │  │                     │     │                          │     │  │
-│  │  │  mounts host dirs   │     │  ~/.mobyclaw/ bind mount │     │  │
-│  │  │  at /mnt/host       │     │  MEMORY.md, memory/,     │     │  │
-│  │  │                     │     │  soul.yaml, HEARTBEAT.md  │     │  │
+│  │  │  /workspace/*       │     │  /source                 │     │  │
+│  │  │  User projects      │     │  mobyclaw source code    │     │  │
+│  │  │  (bind mounts from  │     │  (bind mount from host   │     │  │
+│  │  │   workspaces.conf)  │     │   project root)          │     │  │
 │  │  └─────────────────────┘     └──────────────────────────┘     │  │
 │  │                                                               │  │
-│  │  ┌──────────────────┐                                         │  │
-│  │  │  /data           │ (Docker volume — gateway only)          │  │
-│  │  │  ├── sessions/   │                                         │  │
-│  │  │  ├── cron/       │                                         │  │
-│  │  │  └── state/      │                                         │  │
-│  │  └──────────────────┘                                         │  │
 │  └─────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Container Roles
 
-The stack is built from **4 core services**, each owning one concern:
+The stack is **2 services** (simplified from the originally planned 4):
 
-| Container | Role | Technology | Phase |
-|---|---|---|---|
-| **moby** | AI brain — runs cagent, receives prompts, calls tools on other services | cagent serve api | 1 |
-| **gateway** | Orchestrator — messaging adapters, sessions, heartbeat, cron | Node.js or Go | 2 |
-| **workspace** | Filesystem — mounts host directories, exposes them as MCP tools to the agent | MCP server (cagent serve mcp) | 1 |
-| **memory** | Memory — stores MEMORY.md + daily logs, provides vector search | MCP server + search API | 1 |
+| Container | Role | Technology |
+|---|---|---|
+| **moby** | AI brain — runs cagent, receives prompts, executes tools (shell, filesystem, fetch) | cagent serve api |
+| **gateway** | Orchestrator — messaging adapters, sessions, heartbeat, scheduler, REST API | Node.js (Express) |
+
+**Note:** The original architecture planned 4 containers (moby, gateway, workspace MCP, memory MCP).
+In practice, cagent's built-in tools (shell, filesystem, fetch) handle everything the MCP services
+would have provided. The agent reads/writes memory and workspace files directly via bind mounts.
+This is simpler, faster, and has fewer moving parts.
 
 Messaging platforms are **adapters inside the gateway**, not separate containers:
 
@@ -379,33 +385,29 @@ Messaging platforms are **adapters inside the gateway**, not separate containers
 
 ```
                     ┌───────────┐
-  Telegram, WA,     │  gateway  │  messaging, cron, heartbeat
-  Discord, Slack ─→ │  :3000    │
+  Telegram, WA,     │  gateway  │  messaging, scheduler, heartbeat
+  Discord, Slack ─→ │  :3000    │  REST API, SSE streaming
                     └─────┬─────┘
-                          │ HTTP
+                          │ HTTP + SSE
                           ▼
                     ┌───────────┐
                     │   moby    │  AI brain (cagent serve api)
-                    │  :8080    │
+                    │  :8080    │  tools: shell, filesystem, fetch
                     └──┬─────┬──┘
-              MCP stdio│     │MCP stdio
-                       ▼     ▼
-              ┌──────────┐ ┌──────────┐
-              │workspace │ │  memory  │
-              │(MCP srv) │ │(MCP srv) │
-              └────┬─────┘ └────┬─────┘
-                   │            │
-              host mounts   ~/.mobyclaw/
+                       │     │
+              bind mounts:   │
+              ~/.mobyclaw/    /source
+              /workspace/*   (self-modification)
 ```
 
 **Connection protocols:**
 
 | From → To | Protocol | How |
 |---|---|---|
-| gateway → moby | HTTP | POST to cagent's `/v1/run` API |
-| moby → workspace | MCP (stdio) | cagent `type: mcp` toolset, `command` launches client that connects to workspace container |
-| moby → memory | MCP (stdio) | cagent `type: mcp` toolset, `command` launches client that connects to memory container |
-| CLI → moby | HTTP | Direct `curl` to cagent API (Phase 1, no gateway) |
+| gateway → moby | HTTP + SSE | POST to cagent's `/api/sessions/{id}/agent/{name}`, streams response via SSE |
+| moby → filesystem | Direct | cagent's built-in tools read/write bind-mounted dirs (~/.mobyclaw/, /workspace/, /source) |
+| CLI → gateway | HTTP + SSE | `mobyclaw run` / `mobyclaw chat` hit gateway's `/prompt/stream` endpoint |
+| agent → gateway | HTTP | Agent calls gateway API via curl (e.g., `POST /api/schedules`, `POST /api/deliver`) |
 
 ### Runtime Modes (cagent)
 
@@ -1169,7 +1171,7 @@ etc.) — those just set env vars, which Compose picks up the same way.
 | `SLACK_BOT_TOKEN` | gateway | No | Enables Slack adapter |
 | `WHATSAPP_AUTH` | gateway | No | Enables WhatsApp adapter |
 | `MOBYCLAW_HEARTBEAT_INTERVAL` | gateway | No | Heartbeat frequency (default: `15m`) |
-| `MOBYCLAW_ACTIVE_HOURS` | gateway | No | Heartbeat window (default: `07:00-23:00`) |
+| `MOBYCLAW_ACTIVE_HOURS` | gateway | No | Active hours for heartbeat (default: `07:00-23:00`) |
 | `MOBYCLAW_HOME` | all | No | Override `~/.mobyclaw/` path |
 
 **Convention:** Messaging adapter tokens double as feature flags — if
@@ -1537,7 +1539,7 @@ cagent serve api
 
 ## 12. Phased Roadmap
 
-### Phase 1 — Agent in a Box ✦ START HERE
+### Phase 1 — Agent in a Box ✅ COMPLETE
 
 **Goal:** Run moby in a Docker container with persistent memory, interact via CLI.
 
@@ -1558,7 +1560,7 @@ Success criteria:
 - `mobyclaw chat` opens an interactive session
 - Memory persists across `mobyclaw down && mobyclaw up`
 
-### Phase 2 — Gateway + Messaging
+### Phase 2 — Gateway + Messaging ✅ COMPLETE
 
 **Goal:** Chat with moby through Telegram. Heartbeat and cron working.
 
@@ -1650,18 +1652,12 @@ Deliverables:
   and other messaging libraries are all JS. Works well.
 - ~~**Health checks**~~: **RESOLVED** — `GET /api/ping` returns `{"status":"ok"}`.
   Used in Dockerfile HEALTHCHECK and gateway's `waitForReady()`.
-- **MCP stdio over network**: cagent's MCP toolset uses `command` (stdio transport).
-  For workspace/memory in separate containers, we need a thin CLI client that
-  bridges stdio ↔ network (e.g., `mcp-client http://workspace:9100`). Need to
-  build or find this.
+- ~~**MCP stdio over network**~~: **RESOLVED — Not needed.** cagent built-in tools handle all file access via bind mounts.
 - **Memory search**: Phase 2+ needs vector search over memory files. Options:
   embedded SQLite with vector extension, or a lightweight sidecar (Qdrant, Chroma).
-- **Hot reload**: Can we update `soul.yaml` without restarting the agent container?
-  cagent may re-read instructions on each request.
-- **Heartbeat in Phase 1**: Could we do a lightweight heartbeat via a simple
-  cron/timer on the host that curls the agent API? This would give us heartbeat
-  behavior even before the gateway exists.
+- ~~**Hot reload**~~: **RESOLVED — No.** cagent does NOT hot-reload soul.yaml. Container restart required.
+- ~~**Heartbeat in Phase 1**~~: **RESOLVED — Implemented in gateway.**
 
 ---
 
-*Last updated: 2026-02-23*
+*Last updated: 2026-02-24*
