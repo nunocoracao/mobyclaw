@@ -17,7 +17,7 @@
 const DEBOUNCE_MS = parseInt(process.env.QUEUE_DEBOUNCE_MS || "1000", 10);
 const DASHBOARD_URL = process.env.DASHBOARD_URL || "http://dashboard:7777";
 
-const { addExchange } = require("./short-term-memory");
+const { addExchange, getHistoryBlock } = require("./short-term-memory");
 
 // Accumulated usage for the current session day (in-memory, logged to dashboard)
 let _usageBuffer = [];
@@ -73,8 +73,18 @@ async function processMessageStream(
   callbacks
 ) {
   try {
+    // Inject short-term memory on first message of a new session
+    let finalMessage = message;
+    if (session.consumeNewSessionFlag()) {
+      const stmBlock = getHistoryBlock();
+      if (stmBlock) {
+        console.log(`[${channelId}] Injecting short-term memory into new session`);
+        finalMessage = stmBlock + message;
+      }
+    }
+
     console.log(`[${channelId}] -> agent (session: ${sessionId.slice(0, 8)}...)`);
-    const result = await agent.promptStream(message, sessionId, callbacks);
+    const result = await agent.promptStream(finalMessage, sessionId, callbacks);
     const response = typeof result === "string" ? result : result.text || "";
     const usage = typeof result === "object" ? result.usage : null;
     console.log(
@@ -195,7 +205,8 @@ async function sendToAgentStream(
   session,
   channelId,
   message,
-  callbacks = {}
+  callbacks = {},
+  contextFetcher = null
 ) {
   // If busy, queue the message and notify caller
   if (session.isBusy()) {
@@ -215,8 +226,22 @@ async function sendToAgentStream(
     return promise;
   }
 
-  const sessionId = await ensureSession(agent, session);
+  // Set busy FIRST, before any async work, to prevent races
   session.setBusy(true);
+
+  // Now safe to do async context enrichment — no other message
+  // can sneak in because isBusy() is true
+  let enrichedMessage = message;
+  if (contextFetcher) {
+    try {
+      const ctx = await contextFetcher();
+      if (ctx) enrichedMessage = ctx + message;
+    } catch {
+      // Continue without context
+    }
+  }
+
+  const sessionId = await ensureSession(agent, session);
   session.touchActivity();
 
   try {
@@ -225,7 +250,7 @@ async function sendToAgentStream(
       session,
       channelId,
       sessionId,
-      message,
+      enrichedMessage,
       callbacks
     );
   } finally {

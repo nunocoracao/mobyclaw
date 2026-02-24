@@ -73,24 +73,31 @@ function createContextSender(channelStore) {
     channelStore.track(channelId);
     let enriched = addChannelContext(channelStore, channelId, message);
 
-    // Inject optimized memory context for user messages (not heartbeat/system)
-    if (
+    // Context optimization is now done SYNCHRONOUSLY before the call.
+    // We do NOT await anything before calling sendToAgentStream —
+    // otherwise there's a race window where isBusy() is still false
+    // but we've logically started processing, letting a heartbeat or
+    // second message sneak in and cause double-processing.
+    //
+    // The context fetch happens inside a sync wrapper that passes
+    // the optimization as a callback the orchestrator can await
+    // AFTER setting busy=true.
+
+    const contextFetcher =
       CONTEXT_ENABLED &&
       !channelId.startsWith("heartbeat:") &&
       !channelId.startsWith("api:") &&
       !channelId.startsWith("schedule:")
-    ) {
-      try {
-        const memoryContext = await getOptimizedContext(message);
-        if (memoryContext) {
-          enriched = memoryContext + enriched;
-        }
-      } catch {
-        // Silent fail — agent can still read memory manually
-      }
-    }
+        ? async () => {
+            try {
+              return await getOptimizedContext(message);
+            } catch {
+              return "";
+            }
+          }
+        : null;
 
-    return sendToAgentStream(agent, session, channelId, enriched, callbacks);
+    return sendToAgentStream(agent, session, channelId, enriched, callbacks, contextFetcher);
   };
 }
 

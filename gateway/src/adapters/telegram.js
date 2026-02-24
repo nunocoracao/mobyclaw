@@ -35,6 +35,13 @@ const TEXT_FIRST_SEND_DELAY_MS = 2500;
 const TEXT_GAP_NEW_MSG_MS = 3000;
 const TG_MAX_LEN = 4096;
 
+// Deduplication: track recently processed message IDs to prevent
+// double-processing when polling restarts. Telegram message_id is
+// unique per chat. We keep the last 50 IDs.
+const RECENT_MSG_IDS = new Set();
+const MAX_RECENT = 50;
+const recentOrder = [];
+
 // Allowed user IDs - if set, only these users can interact
 const ALLOWED_USERS = (process.env.TELEGRAM_ALLOWED_USERS || "")
   .split(",")
@@ -155,7 +162,20 @@ async function setupTelegram(agent, sessions, sendToAgentStream, { stopCurrentRu
   bot.on("text", (ctx) => {
     const chatId = ctx.chat.id;
     const message = ctx.message.text;
+    const msgId = ctx.message.message_id;
     if (message.startsWith("/")) return;
+
+    // Dedup: skip if we've already processed this message
+    if (RECENT_MSG_IDS.has(msgId)) {
+      console.log(`[telegram:${chatId}] Dedup skip msg_id=${msgId}`);
+      return;
+    }
+    RECENT_MSG_IDS.add(msgId);
+    recentOrder.push(msgId);
+    while (recentOrder.length > MAX_RECENT) {
+      RECENT_MSG_IDS.delete(recentOrder.shift());
+    }
+
     handleMessage(
       bot.telegram, agent, sessions, sendToAgentStream, chatId, message
     );
@@ -210,7 +230,7 @@ async function setupTelegram(agent, sessions, sendToAgentStream, { stopCurrentRu
     await new Promise(r => setTimeout(r, 3000));
     await bot.telegram.deleteWebhook({ drop_pending_updates: false });
     bot.launch({
-      dropPendingUpdates: false,
+      dropPendingUpdates: false,  // dedup handles duplicates
       allowedUpdates: ["message", "callback_query"],
     }).catch(err => {
       console.error(`[telegram] Restart failed:`, err.message);
