@@ -26,6 +26,7 @@ const { startHeartbeat } = require("./heartbeat");
 const { sendToAgent, sendToAgentStream, stopCurrentRun } = require("./orchestrator");
 const { registerRoutes } = require("./routes");
 const { setupTelegram } = require("./adapters/telegram");
+const { getOptimizedContext, CONTEXT_ENABLED } = require("./context-optimizer");
 
 const AGENT_URL = process.env.AGENT_URL || "http://moby:8080";
 const PORT = process.env.PORT || 3000;
@@ -70,7 +71,25 @@ function createContextSender(channelStore) {
     callbacks
   ) {
     channelStore.track(channelId);
-    const enriched = addChannelContext(channelStore, channelId, message);
+    let enriched = addChannelContext(channelStore, channelId, message);
+
+    // Inject optimized memory context for user messages (not heartbeat/system)
+    if (
+      CONTEXT_ENABLED &&
+      !channelId.startsWith("heartbeat:") &&
+      !channelId.startsWith("api:") &&
+      !channelId.startsWith("schedule:")
+    ) {
+      try {
+        const memoryContext = await getOptimizedContext(message);
+        if (memoryContext) {
+          enriched = memoryContext + enriched;
+        }
+      } catch {
+        // Silent fail — agent can still read memory manually
+      }
+    }
+
     return sendToAgentStream(agent, session, channelId, enriched, callbacks);
   };
 }
@@ -138,6 +157,7 @@ async function main() {
 
   // -- Config summary -----------------------------------------------
   console.log(`  Queue mode: ${session.queueMode}`);
+  console.log(`  Context optimizer: ${CONTEXT_ENABLED ? "enabled" : "disabled"}`);
   console.log(`  Daily reset: ${session.dailyResetHour}:00`);
   if (session.idleResetMinutes) {
     console.log(`  Idle reset: ${session.idleResetMinutes}m`);

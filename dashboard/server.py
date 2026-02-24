@@ -28,6 +28,7 @@ DB_PATH = f"{MOBY_DIR}/data/tasks.db"
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://gateway:3000")
 SOUL_YAML_PATH = f"{MOBY_DIR}/soul.yaml"
 AUTO_RETRY_INTERVAL = int(os.environ.get("AUTO_RETRY_INTERVAL", 300))  # 5 min
+DEFAULT_CONTEXT_BUDGET = int(os.environ.get("CONTEXT_BUDGET_TOKENS", 1500))  # ~1500 tokens
 
 # ─── SQLite Task DB ────────────────────────────────────────
 
@@ -478,6 +479,204 @@ def compress_memory():
 
     return {"archived": len(matches), "archive_file": archive_path}
 
+# ─── Context Window Optimizer ───────────────────────────────
+
+def parse_memory_sections(content):
+    """Parse MEMORY.md into sections by ## headers."""
+    sections = []
+    lines = content.split("\n")
+    current_header = None
+    current_body = []
+
+    for line in lines:
+        if line.startswith("## "):
+            if current_header is not None:
+                sections.append({
+                    "header": current_header,
+                    "body": "\n".join(current_body).strip(),
+                })
+            current_header = line[3:].strip()
+            current_body = []
+        elif current_header is not None:
+            current_body.append(line)
+
+    if current_header is not None:
+        sections.append({
+            "header": current_header,
+            "body": "\n".join(current_body).strip(),
+        })
+
+    return sections
+
+
+def score_section(section, query_words, now_str):
+    """Score a memory section for relevance.
+
+    Returns a numeric score (higher = more relevant).
+    Scoring factors:
+      - Section type (identity/user/prefs always high)
+      - Status (IN PROGRESS > todo > done/cancelled)
+      - Recency (recent dates score higher)
+      - Query keyword overlap
+    """
+    header = section["header"].lower()
+    body = section["body"].lower()
+    full = header + " " + body
+    score = 0
+
+    # --- Always-include sections (core identity) ---
+    always_include = ["identity", "user", "preferences"]
+    for term in always_include:
+        if term in header:
+            score += 1000
+            return score  # Always included, no further scoring needed
+
+    # --- Status-based scoring ---
+    if "in progress" in body:
+        score += 200
+    elif "status:** todo" in body or "status:** planned" in body:
+        score += 100
+    elif "status:** done" in body:
+        score += 10
+    elif "status:** cancelled" in body:
+        score += 5
+
+    # --- Section type scoring ---
+    if "active task" in header:
+        # Active tasks with IN PROGRESS are super important
+        if "in progress" in body:
+            score += 300
+        else:
+            score += 20  # Completed task journal entries
+    elif "sprint" in header or "planned" in header:
+        score += 80
+    elif "projects" in header:
+        score += 90
+    elif "research" in header:
+        score += 30
+    elif "feature" in header or "ideas" in header:
+        score += 25
+
+    # --- Recency scoring ---
+    # Extract dates from header or body (YYYY-MM-DD format)
+    date_matches = re.findall(r'(\d{4}-\d{2}-\d{2})', header + " " + section["body"][:200])
+    if date_matches:
+        try:
+            latest = max(date_matches)
+            today = now_str[:10] if now_str else datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            if latest == today:
+                score += 50
+            elif latest >= (datetime.now(timezone.utc).strftime("%Y-%m-%d")):
+                score += 30
+        except:
+            pass
+
+    # --- Query keyword overlap ---
+    if query_words:
+        overlap = sum(1 for w in query_words if w in full)
+        score += overlap * 40
+
+    # --- Body size penalty (prefer concise sections) ---
+    body_len = len(section["body"])
+    if body_len > 2000:
+        score -= 10
+
+    return score
+
+
+def estimate_tokens(text):
+    """Rough token estimation: ~4 chars per token for English."""
+    return len(text) // 4
+
+
+def get_optimized_context(query=None, budget_tokens=None):
+    """Return the most relevant memory sections within a token budget.
+
+    Args:
+        query: The user's message (for keyword scoring). Optional.
+        budget_tokens: Max tokens to return. Default: DEFAULT_CONTEXT_BUDGET.
+
+    Returns:
+        {
+            "sections": [{"header": ..., "body": ..., "score": ...}],
+            "total_tokens": int,
+            "budget_tokens": int,
+            "sections_included": int,
+            "sections_total": int,
+            "sections_pruned": int,
+            "context": str  # Ready-to-use context text
+        }
+    """
+    budget = budget_tokens or DEFAULT_CONTEXT_BUDGET
+    memory_path = f"{MOBY_DIR}/MEMORY.md"
+
+    if not os.path.exists(memory_path):
+        return {"sections": [], "total_tokens": 0, "budget_tokens": budget,
+                "sections_included": 0, "sections_total": 0, "sections_pruned": 0,
+                "context": ""}
+
+    with open(memory_path, "r") as f:
+        content = f.read()
+
+    sections = parse_memory_sections(content)
+    if not sections:
+        return {"sections": [], "total_tokens": 0, "budget_tokens": budget,
+                "sections_included": 0, "sections_total": 0, "sections_pruned": 0,
+                "context": ""}
+
+    # Tokenize query for keyword matching
+    query_words = []
+    if query:
+        query_words = [w.lower() for w in re.split(r'\W+', query) if len(w) > 2]
+
+    now_str = datetime.now(timezone.utc).isoformat()
+
+    # Score all sections
+    scored = []
+    for s in sections:
+        sc = score_section(s, query_words, now_str)
+        scored.append({**s, "score": sc})
+
+    # Sort by score descending
+    scored.sort(key=lambda x: x["score"], reverse=True)
+
+    # Pack sections within budget
+    included = []
+    total_tokens = 0
+    for s in scored:
+        section_text = f"## {s['header']}\n{s['body']}"
+        section_tokens = estimate_tokens(section_text)
+
+        if total_tokens + section_tokens > budget and included:
+            # Over budget - skip unless it's the first section
+            continue
+
+        included.append(s)
+        total_tokens += section_tokens
+
+    # Re-sort included by original order (preserve logical flow)
+    section_order = {s["header"]: i for i, s in enumerate(sections)}
+    included.sort(key=lambda x: section_order.get(x["header"], 999))
+
+    # Build context text
+    context_parts = []
+    for s in included:
+        context_parts.append(f"## {s['header']}\n{s['body']}")
+
+    context_text = "\n\n".join(context_parts)
+
+    return {
+        "sections": [{"header": s["header"], "score": s["score"],
+                       "tokens": estimate_tokens(f"## {s['header']}\n{s['body']}")} for s in included],
+        "total_tokens": total_tokens,
+        "budget_tokens": budget,
+        "sections_included": len(included),
+        "sections_total": len(sections),
+        "sections_pruned": len(sections) - len(included),
+        "context": context_text,
+    }
+
+
 # ─── Settings API ───────────────────────────────────────────
 
 def get_settings():
@@ -593,6 +792,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json({"error": "Not found"}, 404)
         elif path == "/api/tasks/blocked":
             self.send_json(get_blocked_tasks())
+
+        # Context Window Optimizer
+        elif path == "/api/context":
+            query = params.get("query", [None])[0]
+            budget = int(params.get("budget", [str(DEFAULT_CONTEXT_BUDGET)])[0])
+            self.send_json(get_optimized_context(query, budget))
 
         # Auto-retry status
         elif path == "/api/retry/status":

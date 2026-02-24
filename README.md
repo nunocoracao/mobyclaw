@@ -345,7 +345,7 @@ the [online docs](https://nunocoracao.github.io/mobyclaw/docs/).
 - [x] **Phase 2** — Gateway + Telegram streaming, heartbeat, scheduling, reminders
 - [x] **Phase 2.5** — Session UX (queue, collect mode, /stop, /status)
 - [x] **Phase 2.7** — Tool gateway (web browsing, search, fetch, weather, 19 MCP tools)
-- [x] **Phase 2.8** — Dashboard, task API (deps + auto-retry), personality editor, maintenance scripts, code/data separation
+- [x] **Phase 2.8** — Dashboard, task API (deps + auto-retry), personality editor, context window optimizer, maintenance scripts, code/data separation
 - [ ] **Phase 3** — Read-only integrations (Notion, Gmail, Calendar, Slack)
 - [ ] **Phase 4** — More messaging channels, vector memory, webhook ingress
 - [ ] **Phase 5** — Production hardening (seccomp, network policy, monitoring)

@@ -70,6 +70,7 @@ Deliverables:
 - **Cloudflare tunnel**: Optional remote dashboard access via trycloudflare.com
 - **Repo monitoring**: GitHub activity checking script (`check-repos.sh`)
 - **Code/data separation**: All code in repo (`/source/`), all user data in `~/.mobyclaw/`
+- **Context window optimizer**: Smart context injection - scores MEMORY.md sections by relevance, keyword overlap, status, and recency; injects top sections within a token budget before each message reaches the agent
 
 ### Phase 3 — Read-Only Integrations 🔜 PLANNED
 
