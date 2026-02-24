@@ -409,6 +409,15 @@ The agent uses these via `shell` tool calls:
 - [x] Weather tool: `weather_get` (Open-Meteo, no API key)
 - [x] Tested end-to-end: agent searched web and summarized results
 
+### Phase 1.5: Browser Automation ✅ COMPLETE
+- [x] Full headless browser via Playwright + Chromium in tool-gateway
+- [x] Accessibility snapshot with ref-based element targeting (Playwright internal `_snapshotForAI`)
+- [x] 16 browser tools: navigate, snapshot, screenshot, click, type, fill_form, select_option, hover, press_key, scroll, back, forward, wait, tabs, close, eval
+- [x] mcp-bridge updated: recursive JSON Schema → Zod conversion (handles arrays, objects, enums)
+- [x] Persistent browser context with 10min idle auto-close
+- [x] Tested end-to-end: navigated pages, filled/submitted forms, took screenshots
+- [x] Agent max_iterations raised to 15 (browser tasks need more steps)
+
 ### Phase 2: Notion Integration
 - [ ] Add Notion remote MCP as upstream server
 - [ ] Implement OAuth 2.0 + PKCE flow (chat-mediated)

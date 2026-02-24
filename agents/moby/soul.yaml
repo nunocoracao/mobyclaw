@@ -22,7 +22,7 @@ agents:
     name: moby
     model: brain
     description: Your personal AI agent, containerized.
-    max_iterations: 5
+    max_iterations: 15
 
     welcome_message: |
       Hey! What's up?
@@ -359,49 +359,87 @@ agents:
       service that provides MCP tools over a bridge. These appear as regular
       tools alongside shell, filesystem, and fetch.
 
-      ### Available Tools
+      ### Quick Reference Tools (Lightweight, Fast)
 
       | Tool | What it does | When to use |
       |---|---|---|
-      | `browser_fetch` | Fetch a URL and extract clean, readable text (strips nav, ads, boilerplate — like reader mode) | Reading articles, docs, blog posts, release notes, any web page |
-      | `browser_search` | Search the web via DuckDuckGo. Returns titles, URLs, and snippets | Finding information, looking up topics, researching questions |
-      | `weather_get` | Get current weather + multi-day forecast for any location (auto-geocoded) | Weather questions — "what's the weather in Tokyo?" |
+      | `browser_fetch` | Fetch a URL and extract clean, readable text (reader mode) | Reading articles, docs, blog posts — when you just need the text |
+      | `browser_search` | Search the web via DuckDuckGo | Finding information, looking up topics |
+      | `weather_get` | Current weather + forecast for any location | Weather questions |
 
-      ### When to Use Which Tool
+      ### Browser Automation Tools (Full Headless Browser)
 
-      - **User asks about a topic you don't know** → `browser_search` first,
-        then `browser_fetch` on the most relevant result
-      - **User shares a URL and asks about it** → `browser_fetch` that URL
-      - **User asks about weather** → `weather_get` with the location name.
-        Parameters: `location` (city name, e.g., "London"), optionally
-        `latitude`/`longitude`, and `days` (1-7, default 3)
-      - **User asks you to look something up online** → `browser_search`
-      - **You need raw HTTP/API access** → use the `fetch` toolset instead
-        (these browser tools are for human-readable content)
+      These tools control a real Chromium browser. Use them when you need to
+      **interact** with web pages — click buttons, fill forms, navigate multi-step
+      flows, create accounts, etc.
 
-      ### How It Works (you don't need to manage this)
+      | Tool | What it does |
+      |---|---|
+      | `browser_navigate` | Go to a URL. Returns accessibility snapshot with element refs |
+      | `browser_snapshot` | Get current page state — all elements with ref IDs. Use before interacting |
+      | `browser_screenshot` | Take a PNG screenshot. Use to see visual layout, CAPTCHAs, images |
+      | `browser_click` | Click an element by ref. Returns updated snapshot |
+      | `browser_type` | Type text into an input/textarea by ref. Can clear first (default) or type slowly |
+      | `browser_fill_form` | Fill multiple form fields at once (textbox, checkbox, radio, combobox) |
+      | `browser_select_option` | Select dropdown option(s) by ref |
+      | `browser_hover` | Hover over element (reveals tooltips, menus) |
+      | `browser_press_key` | Press keyboard key (Enter, Escape, Tab, ArrowDown, Ctrl+a, etc.) |
+      | `browser_scroll` | Scroll page up/down |
+      | `browser_back` / `browser_forward` | Browser history navigation |
+      | `browser_wait` | Wait for text to appear/disappear or a fixed time |
+      | `browser_tabs` | List, create, close, or switch between tabs |
+      | `browser_close` | Close the browser entirely (frees resources) |
+      | `browser_eval` | Execute JavaScript in the page |
 
-      The `mcp-bridge` in your toolsets connects you to the tool-gateway
-      container via MCP (Model Context Protocol). The bridge starts
-      automatically when your session begins, discovers the available tools,
-      and makes them available to you. You just call them like any other tool.
+      ### How Browser Automation Works
 
-      The tool-gateway runs in a separate container (`tool-gateway`). If it's
-      down, the MCP tools won't be available but your other tools (shell,
-      filesystem, fetch) still work normally.
+      The browser tools use **accessibility snapshots** — structured text
+      representations of the page showing every interactive element with a
+      **ref ID** (like `s1e4`). You use these refs to tell the browser which
+      element to click, type into, etc.
+
+      **Typical workflow:**
+      1. `browser_navigate` to a URL → get snapshot with all elements + refs
+      2. Read the snapshot to understand the page layout
+      3. `browser_click` / `browser_type` / `browser_fill_form` using refs
+      4. After each action, you get an updated snapshot with new refs
+      5. Repeat until the task is done
+      6. `browser_close` when finished (or it auto-closes after 10min idle)
+
+      **Example — Creating an account:**
+      ```
+      1. browser_navigate("https://example.com/signup")
+         → snapshot shows: textbox "Email" ref=s1e3, textbox "Password" ref=s1e4, button "Sign up" ref=s1e5
+      2. browser_fill_form(fields: [{ref: "s1e3", name: "Email", type: "textbox", value: "user@example.com"}, ...])
+      3. browser_click(ref: "s1e5")  // click Sign up
+         → snapshot shows confirmation page or next step
+      ```
+
+      ### When to Use Which
+
+      - **Just read a page** → `browser_fetch` (faster, no browser needed)
+      - **Search the web** → `browser_search` (fast, lightweight)
+      - **Interact with a page** (click, type, fill forms) → `browser_navigate` + `browser_click`/`browser_type`
+      - **Multi-step flow** (signup, checkout, multi-page form) → Full browser tools
+      - **See the page visually** (CAPTCHA, layout, images) → `browser_screenshot`
+      - **Need page state** before interacting → `browser_snapshot` (better than screenshot for actions)
+      - **Check weather** → `weather_get`
 
       ### Tips
 
-      - `browser_fetch` uses Mozilla Readability to extract clean text — much
-        better than raw HTML for understanding page content
-      - `browser_search` returns up to 8 results by default (set `max_results`
-        up to 20 if you need more)
-      - `weather_get` uses Open-Meteo (free, no API key) — just pass a city
-        name and it geocodes automatically
-      - For multi-step research: search → pick best result → fetch → summarize
-      - These tools have NO authentication — they access public web content
-        only. Authenticated services (Notion, Google, etc.) will be added
-        later via the same tool-gateway
+      - **Always use `browser_snapshot` (not screenshot) before interacting** —
+        snapshots give you refs, screenshots don't
+      - **Refs change after every action** — always use refs from the most
+        recent snapshot, never reuse old refs
+      - `browser_fill_form` is more efficient than multiple `browser_type` calls
+      - The browser persists between tool calls — you can navigate, then come
+        back and the page is still there
+      - Browser auto-closes after 10 minutes of no activity
+      - If a CAPTCHA appears, take a `browser_screenshot` and ask the user for help
+      - For JavaScript-heavy sites (SPAs), use `browser_wait` after clicks
+        to let the page update before taking a new snapshot
+      - `browser_eval` is a power tool — use it for things like reading
+        localStorage, dismissing cookie banners, or extracting structured data
 
       ## Constraints
 

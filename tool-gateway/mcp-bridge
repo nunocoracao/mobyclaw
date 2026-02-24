@@ -64,6 +64,44 @@ async function main() {
   // Re-register each remote tool locally so cagent discovers them
   const { z } = require("zod");
 
+  // Convert JSON Schema → Zod type (recursive for nested schemas)
+  function jsonSchemaToZod(prop, isRequired = true) {
+    let zType;
+
+    if (prop.type === "array" && prop.items) {
+      // Array of items
+      const itemType = jsonSchemaToZod(prop.items, true);
+      zType = z.array(itemType);
+    } else if (prop.type === "object" && prop.properties) {
+      // Nested object
+      const shape = {};
+      for (const [k, v] of Object.entries(prop.properties)) {
+        const req = prop.required && prop.required.includes(k);
+        shape[k] = jsonSchemaToZod(v, req);
+      }
+      zType = z.object(shape);
+    } else if (prop.enum) {
+      // Enum values
+      zType = z.enum(prop.enum);
+    } else {
+      switch (prop.type) {
+        case "number":
+        case "integer":
+          zType = z.number();
+          break;
+        case "boolean":
+          zType = z.boolean();
+          break;
+        default:
+          zType = z.string();
+      }
+    }
+
+    if (prop.description) zType = zType.describe(prop.description);
+    if (!isRequired) zType = zType.optional();
+    return zType;
+  }
+
   for (const tool of remoteTools) {
     // Convert JSON Schema properties → Zod shape for McpServer.tool()
     const shape = {};
@@ -71,21 +109,7 @@ async function main() {
       for (const [key, prop] of Object.entries(tool.inputSchema.properties)) {
         const required =
           tool.inputSchema.required && tool.inputSchema.required.includes(key);
-        let zType;
-        switch (prop.type) {
-          case "number":
-          case "integer":
-            zType = z.number();
-            break;
-          case "boolean":
-            zType = z.boolean();
-            break;
-          default:
-            zType = z.string();
-        }
-        if (prop.description) zType = zType.describe(prop.description);
-        if (!required) zType = zType.optional();
-        shape[key] = zType;
+        shape[key] = jsonSchemaToZod(prop, required);
       }
     }
 

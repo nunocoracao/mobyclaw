@@ -87,6 +87,11 @@ Success criteria:
 - Tools discoverable by cagent through MCP bridge (stdio) ✅
 - Tool-gateway runs in separate container with independent health checks ✅
 - Agent can chain tools (search → fetch → summarize) ✅
+- **Full headless browser** — Playwright + Chromium in tool-gateway ✅
+- Agent can navigate pages, see accessibility snapshots with element refs ✅
+- Agent can fill forms, click buttons, submit multi-step flows ✅
+- Agent can take screenshots for visual verification ✅
+- 19 tools total (3 lightweight + 16 browser automation) ✅
 
 ### Phase 3 - Workspace + Integrations
 
