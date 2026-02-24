@@ -67,6 +67,27 @@ Success criteria:
 - /stop aborts long-running tasks without restarting the agent
 - /new starts a fresh conversation
 
+### Phase 2.7 - Tool Gateway ✅ COMPLETE
+
+**Goal:** Agent can access external web services (search, fetch, weather) via MCP tool gateway.
+
+Deliverables:
+- **tool-gateway container**: Stateless MCP Streamable HTTP server with admin API
+- **mcp-bridge**: Node.js stdio↔HTTP bridge connecting cagent to tool-gateway
+- **browser_fetch tool**: Fetch URL → clean readable text (Readability extraction)
+- **browser_search tool**: Web search via DuckDuckGo HTML lite
+- **weather_get tool**: Current weather + forecast via Open-Meteo (free, no API key)
+- **Zod schemas**: All tool definitions use proper Zod types (MCP SDK v1.27.0 requirement)
+- **Architecture doc**: `docs/14-tool-gateway.md` with full design for future OAuth/service integrations
+
+Success criteria:
+- `weather_get` returns current weather for any city via API and Telegram ✅
+- `browser_search` returns DuckDuckGo results ✅
+- `browser_fetch` extracts readable text from web pages ✅
+- Tools discoverable by cagent through MCP bridge (stdio) ✅
+- Tool-gateway runs in separate container with independent health checks ✅
+- Agent can chain tools (search → fetch → summarize) ✅
+
 ### Phase 3 - Workspace + Integrations
 
 **Goal:** Agent can access local files. More messaging channels.
