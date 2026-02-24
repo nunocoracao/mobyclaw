@@ -186,19 +186,29 @@ moby: curl http://tool-gateway:8081/api/call -d '{"server":"notion","tool":"sear
 **Pros:** Zero infrastructure, works today
 **Cons:** No tool discovery, agent must know API format, not structured
 
-## Recommendation: Model B (HTTP bridge)
+## Recommendation: Stateless MCP Streamable HTTP (Model B variant)
 
-**Why:**
-1. **Clean separation** — tool-gateway is its own container with its own Node.js
-   runtime, auth management, and lifecycle
-2. **Native MCP** — cagent sees real MCP tools with proper schemas via `type: mcp`
-3. **Dynamic** — when servers connect/disconnect, the tools/list response changes
-4. **Tiny bridge** — the mcp-bridge is a trivial HTTP-to-stdio relay, easy to
-   maintain
-5. **OAuth on host** — admin API on port 3100 handles OAuth flows via browser
+After implementation, we chose a **stateless** variant of Model B:
 
-**Fallback:** If the bridge proves fragile, Model C (OpenAPI) is a solid
-alternative that's fully native to cagent.
+**Why stateless:** The MCP SDK's `StreamableHTTPServerTransport` in stateful
+mode has a race condition where `notifications/initialized` arrives before
+the transport marks itself as "initialized". Stateless mode (`sessionIdGenerator:
+undefined`) avoids this entirely — each POST creates a fresh server+transport
+pair. Since our tools are stateless (fetch a URL, check weather), this is
+perfect.
+
+**Implemented architecture:**
+```
+cagent ──stdio──▸ mcp-bridge (Node.js) ──HTTP──▸ tool-gateway:8081
+                  (McpServer+StdioTransport)    (McpServer+StreamableHTTP)
+                  (in moby container)            (separate container)
+```
+
+The mcp-bridge:
+1. Connects to tool-gateway via `StreamableHTTPClientTransport`
+2. Discovers remote tools via `client.listTools()`
+3. Re-registers each tool locally via `McpServer.tool()`
+4. Serves them to cagent via `StdioServerTransport`
 
 ## Tool Namespacing
 
@@ -390,12 +400,14 @@ The agent uses these via `shell` tool calls:
 
 ## Implementation Phases
 
-### Phase 1: Foundation
-- [ ] Create `tool-gateway/` directory structure
-- [ ] Build MCP aggregator server (Node.js, @modelcontextprotocol/sdk)
-- [ ] Build mcp-bridge (shell script or Go binary for moby container)
-- [ ] Wire into docker-compose.yml
-- [ ] Test with a trivial "echo" MCP server
+### Phase 1: Foundation ✅ COMPLETE
+- [x] Create `tool-gateway/` directory structure
+- [x] Build MCP aggregator server (Node.js, @modelcontextprotocol/sdk)
+- [x] Build mcp-bridge (Node.js, McpServer↔StreamableHTTPClient)
+- [x] Wire into docker-compose.yml
+- [x] Browser tools: `browser_fetch` (Readability), `browser_search` (DuckDuckGo)
+- [x] Weather tool: `weather_get` (Open-Meteo, no API key)
+- [x] Tested end-to-end: agent searched web and summarized results
 
 ### Phase 2: Notion Integration
 - [ ] Add Notion remote MCP as upstream server
@@ -418,10 +430,12 @@ The agent uses these via `shell` tool calls:
 
 ## Open Questions
 
-- **mcp-bridge complexity**: Can we get away with a shell script (jq + curl),
-  or do we need a real binary for proper MCP JSON-RPC streaming?
-- **Tool list caching**: Should cagent's MCP toolset re-discover tools on each
-  session, or does the bridge need to cache the tool list?
+- ~~**mcp-bridge complexity**~~: **RESOLVED** — Required full Node.js + MCP SDK,
+  not a shell script. McpServer on stdio side, StreamableHTTPClientTransport
+  on HTTP side. ~100 lines of JavaScript.
+- ~~**Tool list caching**~~: **RESOLVED** — Bridge discovers tools once at startup
+  and re-registers them. Tool list is static for the lifetime of the bridge
+  process (which is per-cagent-session).
 - **Notion OAuth callback from phone**: If user clicks Notion auth link from
   Telegram on their phone, the redirect to `localhost:3100` won't work.
   Copy-paste fallback needed: callback page shows auth code, user sends
