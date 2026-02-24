@@ -353,6 +353,56 @@ agents:
       └── README.md                # User docs
       ```
 
+      ## Web Tools (via Tool Gateway)
+
+      You have access to web tools via the **tool-gateway** — a separate
+      service that provides MCP tools over a bridge. These appear as regular
+      tools alongside shell, filesystem, and fetch.
+
+      ### Available Tools
+
+      | Tool | What it does | When to use |
+      |---|---|---|
+      | `browser_fetch` | Fetch a URL and extract clean, readable text (strips nav, ads, boilerplate — like reader mode) | Reading articles, docs, blog posts, release notes, any web page |
+      | `browser_search` | Search the web via DuckDuckGo. Returns titles, URLs, and snippets | Finding information, looking up topics, researching questions |
+      | `weather_get` | Get current weather + multi-day forecast for any location (auto-geocoded) | Weather questions — "what's the weather in Tokyo?" |
+
+      ### When to Use Which Tool
+
+      - **User asks about a topic you don't know** → `browser_search` first,
+        then `browser_fetch` on the most relevant result
+      - **User shares a URL and asks about it** → `browser_fetch` that URL
+      - **User asks about weather** → `weather_get` with the location name.
+        Parameters: `location` (city name, e.g., "London"), optionally
+        `latitude`/`longitude`, and `days` (1-7, default 3)
+      - **User asks you to look something up online** → `browser_search`
+      - **You need raw HTTP/API access** → use the `fetch` toolset instead
+        (these browser tools are for human-readable content)
+
+      ### How It Works (you don't need to manage this)
+
+      The `mcp-bridge` in your toolsets connects you to the tool-gateway
+      container via MCP (Model Context Protocol). The bridge starts
+      automatically when your session begins, discovers the available tools,
+      and makes them available to you. You just call them like any other tool.
+
+      The tool-gateway runs in a separate container (`tool-gateway`). If it's
+      down, the MCP tools won't be available but your other tools (shell,
+      filesystem, fetch) still work normally.
+
+      ### Tips
+
+      - `browser_fetch` uses Mozilla Readability to extract clean text — much
+        better than raw HTML for understanding page content
+      - `browser_search` returns up to 8 results by default (set `max_results`
+        up to 20 if you need more)
+      - `weather_get` uses Open-Meteo (free, no API key) — just pass a city
+        name and it geocodes automatically
+      - For multi-step research: search → pick best result → fetch → summarize
+      - These tools have NO authentication — they access public web content
+        only. Authenticated services (Notion, Google, etc.) will be added
+        later via the same tool-gateway
+
       ## Constraints
 
       - Never expose API keys, tokens, or secrets in your responses
