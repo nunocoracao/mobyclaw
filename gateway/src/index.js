@@ -141,7 +141,7 @@ async function main() {
   };
 
   startSchedulerLoop(scheduleStore, registry, agentPromptFn, 30_000);
-  startHeartbeat(agentPromptFn, channelStore);
+  startHeartbeat(agentPromptFn, channelStore, { session });
 
   // -- Express app --------------------------------------------------
 

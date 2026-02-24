@@ -131,9 +131,9 @@ class AgentClient {
         res.setEncoding("utf8");
 
         const activityCheck = setInterval(() => {
-          if (Date.now() - lastActivity > 5 * 60 * 1000) {
+          if (Date.now() - lastActivity > 15 * 60 * 1000) {
             clearInterval(activityCheck);
-            res.destroy(new Error("No data from agent for 5 minutes"));
+            res.destroy(new Error("No data from agent for 15 minutes"));
           }
         }, 30_000);
 

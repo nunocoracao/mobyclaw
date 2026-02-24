@@ -46,6 +46,7 @@ function startHeartbeat(sendPromptFn, channelStore, options = {}) {
     process.env.MOBYCLAW_ACTIVE_HOURS ||
     "07:00-23:00";
   const activeHours = parseActiveHours(activeHoursStr);
+  const session = options.session || null;
   let running = false;
 
   console.log(
@@ -59,6 +60,14 @@ function startHeartbeat(sendPromptFn, channelStore, options = {}) {
       console.log(`[heartbeat] Skipped — previous heartbeat still running`);
       return;
     }
+
+    // Skip if a user request is active or queued — heartbeat is low priority
+    // and should never disrupt interactive sessions
+    if (session && (session.isBusy() || session.hasPending())) {
+      console.log(`[heartbeat] Skipped — session busy or has queued messages`);
+      return;
+    }
+
     running = true;
 
     const now = new Date().toISOString();
