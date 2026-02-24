@@ -384,62 +384,107 @@ The heartbeat is an **intelligent periodic check** where the agent wakes
 up, reviews its state, and acts if needed. Unlike the scheduler (dumb
 timer, pre-composed message), the heartbeat involves full LLM reasoning.
 
-**Trigger:** Gateway timer, every `MOBYCLAW_HEARTBEAT_INTERVAL` (default: 15m)
+**Trigger:** Gateway timer, every `MOBYCLAW_HEARTBEAT_INTERVAL` (default: 2h)
 
 **Active hours:** Only fires between `MOBYCLAW_ACTIVE_HOURS` (default:
-`07:00-23:00`). Silent outside these hours. Scheduled reminders always
-fire regardless of active hours.
+`07:00-23:00`). Timezone-aware via `TZ` env var.
 
-**Heartbeat prompt (sent by gateway to agent):**
+**Two heartbeat modes alternate:**
 
+| Mode | Frequency | What it does | Cost |
+|---|---|---|---|
+| **Reflection** | Default | Journal, inner state, brief task check | Cheap (no web) |
+| **Exploration** | Every Nth beat (default: 4th) | Pick a curiosity topic, fetch 1 URL, summarize | Slightly more |
+
+**Reflection heartbeat prompt:**
+- Read inner state (`state/inner.json`) and self-model (`SELF.md`)
+- Read `HEARTBEAT.md` reflection guide
+- Write a journal entry (`journal/YYYY-MM-DD.md`)
+- Update inner state if mood/preoccupations shifted
+- Check tasks briefly; notify user if something urgent
+- If nothing needs attention: reply `HEARTBEAT_OK`
+
+**Exploration heartbeat prompt:**
+- Pick ONE topic from `curiosity_queue` in `inner.json`
+- Use at most 1 web fetch (browser_fetch or browser_search)
+- Write a ~300 word summary to `explorations/YYYY-MM-DD-topic.md`
+- Update `curiosity_queue`: remove explored, add new questions
+- Also do a brief reflection (inner state, journal, task check)
+
+**Failure handling:**
+- Tracks consecutive failures. After 2 failures, pauses heartbeats.
+- Auto-resumes when the session changes (user `/new` or auto-recovery).
+- Prevents hammering a dead/corrupted session every 15 minutes.
+
+**Exploration config (env vars):**
+- `EXPLORATION_ENABLED` — default: `true`
+- `EXPLORATION_FREQUENCY` — every Nth heartbeat (default: `4`)
+- `EXPLORATION_MAX_FETCHES` — max URLs per exploration (default: `1`)
+- `EXPLORATION_SUMMARY_WORDS` — target summary length (default: `300`)
+
+### 6.11 Short-Term Memory (STM)
+
+When cagent sessions reset (daily, turn limit, crash), all conversation
+history is lost. The STM module preserves continuity:
+
+- **`addExchange()`** saves every user↔agent exchange to
+  `~/.mobyclaw/short-term-memory.json` (rolling buffer of 20)
+- **`getHistoryBlock()`** formats the buffer as a `[SHORT-TERM MEMORY]`
+  block for injection into the first message of a new session
+- Messages are capped at 1500 chars each
+- Heartbeat and system messages are excluded
+- The injected STM block is stripped before being saved back (no nesting)
+
+**Flow:**
 ```
-[HEARTBEAT | time=2026-02-24T09:03:00Z]
-You are being woken by a scheduled heartbeat.
-
-1. Read TASKS.md — review your task list, note anything relevant
-2. Read HEARTBEAT.md — follow the checklist
-3. If you need to notify the user about something, use:
-   curl -s -X POST http://gateway:3000/api/deliver \
-     -H "Content-Type: application/json" \
-     -d '{"channel": "CHANNEL_ID", "message": "YOUR MESSAGE"}'
-4. If nothing needs attention, reply exactly: HEARTBEAT_OK
+Session resets (daily/turn-limit/crash) → new cagent session created
+  │
+  └─ First user message:
+       1. consumeNewSessionFlag() → true
+       2. getHistoryBlock() → formatted last 20 exchanges
+       3. Prepend to message: [SHORT-TERM MEMORY]...message
+       4. Agent receives full context of recent conversations
 ```
 
-**Heartbeat flow:**
+### 6.12 Context Optimizer
 
-```
-Gateway timer fires (every 15 minutes)
-  │
-  ├─ Check active hours (07:00-23:00) → skip if outside
-  │
-  ├─ Send heartbeat prompt to agent (session: "heartbeat:main")
-  │
-  ▼
-Agent processes heartbeat
-  │
-  ├─ Reads TASKS.md
-  │   ├─ Reviews open tasks
-  │   ├─ Marks completed items
-  │   └─ Cleans up old entries
-  │
-  ├─ Reads HEARTBEAT.md
-  │   ├─ Follows checklist items
-  │   └─ Daily tasks (once per day)
-  │
-  ├─ If something needs user attention:
-  │   └─ curl POST http://gateway:3000/api/deliver ...
-  │
-  └─ Response:
-      ├─ "HEARTBEAT_OK" → gateway suppresses, logs quietly
-      └─ Summary text → gateway logs it
-```
+Before user messages reach the agent, the context optimizer fetches
+the most relevant memory and state and prepends it. The agent doesn't
+need to manually read MEMORY.md on every turn.
 
-**Why the agent uses `/api/deliver` instead of just responding:**
-The heartbeat runs on a system session (`heartbeat:main`), not a user
-channel. The agent's response goes nowhere useful. For the agent to
-reach the user, it explicitly calls the delivery API with the target
-channel. This gives the agent control over WHERE to send (different
-tasks may target different channels).
+**What gets injected:**
+- **Memory sections** — scored by keyword overlap with user message,
+  fetched from dashboard API (`GET /api/context?query=...&budget=1500`)
+- **Inner state** — emotional/cognitive state from `state/inner.json`
+  (mood, energy, preoccupations, curiosity queue)
+- **Self-model** — first 2 sections of `SELF.md`
+- **Relevant explorations** — exploration files scored by keyword overlap
+
+**Format:** `[MEMORY CONTEXT] ... [/MEMORY CONTEXT]` block prepended to message.
+
+**Timing fix:** Context fetch is now done AFTER `setBusy(true)` in the
+orchestrator (not before), preventing a race condition where heartbeats
+could sneak in during the async fetch and cause double-processing.
+
+### 6.13 Session Stability
+
+**Turn limit:** Sessions auto-rotate after 80 exchanges (configurable
+via `maxTurns`). Prevents history from growing to 100+ messages where
+Anthropic API corruption becomes likely.
+
+**Stream error detection:** When cagent returns HTTP 200 but the SSE
+stream contains a `type: "error"` event with no content, the gateway
+rejects the promise. `isSessionError()` recognizes corruption patterns:
+`sequencing`, `tool_use_id`, `invalid_request_error`, `all models failed`.
+Auto-clears the session and retries with a fresh one.
+
+**Telegram dedup:** Tracks last 50 `message_id`s. Skips any message
+already processed. Prevents double-processing when Telegraf's polling
+restarts and re-delivers updates.
+
+**Polling liveness:** Monitors Telegraf polling activity. If idle for
+5+ minutes and Telegram API is reachable, restarts polling. Conservative
+threshold prevents false positives.
 
 ### 6.8 Channel Context Injection
 

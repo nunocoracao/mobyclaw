@@ -25,18 +25,20 @@ mobyclaw/                          # CODE — git-tracked, versioned, ships as c
 │   ├── Dockerfile
 │   ├── package.json
 │   └── src/
-│       ├── index.js               # Express app composition root
-│       ├── orchestrator.js        # Session routing, collect mode, debounce, /stop
-│       ├── agent-client.js        # HTTP client for cagent API with SSE streaming
-│       ├── sessions.js            # Session store with lifecycle + queue modes
+│       ├── index.js               # Express app composition root + context sender
+│       ├── orchestrator.js        # Session routing, collect mode, debounce, /stop, STM injection
+│       ├── agent-client.js        # HTTP client for cagent API with SSE streaming + stream error detection
+│       ├── sessions.js            # Session store with lifecycle + queue modes + turn limit (80)
 │       ├── routes.js              # API routes including /api/stop
-│       ├── heartbeat.js           # Heartbeat with skip guard
+│       ├── heartbeat.js           # Heartbeat with reflection/exploration modes + failure tracking
 │       ├── channels.js            # Persistent channel store
 │       ├── scheduler.js           # Schedule store + scheduler loop
+│       ├── context-optimizer.js   # Smart context injection (memory sections + inner state + explorations)
+│       ├── short-term-memory.js   # Rolling buffer of recent exchanges for session continuity
 │       ├── tool-labels.js         # Tool name -> human-readable label formatting
 │       ├── adapter-registry.js    # Platform -> sendFn dispatch
 │       └── adapters/              # Messaging platform adapters
-│           └── telegram.js        # Telegraf bot with streaming, typing, /stop, /status
+│           └── telegram.js        # Telegraf bot with streaming, typing, /stop, /status, dedup
 │
 ├── tool-gateway/                  # External tool gateway (MCP)
 │   ├── Dockerfile                 # Node.js 22 + Playwright + Chromium
@@ -107,6 +109,10 @@ Everything specific to *this user* and *this agent instance*:
 ├── channels.json                  # Known messaging channels
 ├── schedules.json                 # Persistent schedule store
 ├── session.json                   # Current session state
+├── short-term-memory.json         # Rolling buffer of last 20 exchanges (STM)
+├── SELF.md                        # Agent's self-model (who it thinks it is)
+├── LESSONS.md                     # Lessons learned from experience
+├── BOOT.md                        # Auto-generated compact boot context
 ├── gh/                            # GitHub CLI OAuth config
 │   ├── config.yml
 │   └── hosts.yml
@@ -118,7 +124,11 @@ Everything specific to *this user* and *this agent instance*:
 │   ├── YYYY-MM-DD.md             # Daily activity logs
 │   └── archives/                  # Compressed old task entries
 ├── state/                         # Transient state files
+│   ├── inner.json                 # Agent's emotional/cognitive state
+│   ├── heartbeat-state.json       # Heartbeat counter + last exploration timestamp
 │   └── last-check-*              # Repo monitoring timestamps
+├── journal/                       # Daily journal entries (agent's inner life)
+├── explorations/                  # Curiosity exploration summaries
 ├── logs/                          # Service logs
 │   └── watcher.log               # Container watcher log
 └── sessions/                      # Session persistence

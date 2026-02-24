@@ -46,6 +46,14 @@
 - `/source/` - Project source code (mounted in agent container for self-modification)
 - `/workspace/` - User projects (bind-mounted from host)
 
-**Gateway modules:** index → orchestrator → agent-client → sessions, with scheduler, heartbeat, channels, adapter-registry, and routes as peers.
+**Gateway modules:** index → orchestrator → agent-client → sessions, with scheduler, heartbeat, channels, adapter-registry, context-optimizer, short-term-memory, and routes as peers.
+
+**New in latest:**
+- **Short-term memory**: Rolling buffer of last 20 exchanges, injected into new sessions for continuity across cagent session resets
+- **Context optimizer**: Scores MEMORY.md sections by relevance and injects top sections + inner emotional state + self-model + relevant explorations before each user message
+- **Exploration heartbeats**: Every Nth heartbeat (default: every 4th) allows the agent to follow a curiosity topic, fetch 1 URL, and write a summary
+- **Session turn limit**: Auto-rotates sessions after 80 exchanges to prevent history corruption
+- **Telegram deduplication**: Tracks last 50 message_ids to prevent double-processing on polling restarts
+- **Stream error detection**: Detects corrupted sessions (Anthropic 400 errors) from SSE stream and auto-recovers
 
 *Last updated: 2026-02-24*

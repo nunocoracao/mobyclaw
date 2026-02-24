@@ -72,6 +72,24 @@ Deliverables:
 - **Code/data separation**: All code in repo (`/source/`), all user data in `~/.mobyclaw/`
 - **Context window optimizer**: Smart context injection - scores MEMORY.md sections by relevance, keyword overlap, status, and recency; injects top sections within a token budget before each message reaches the agent
 
+### Phase 2.9 — Session Stability + Agent Inner Life ✅ COMPLETE
+
+**Goal:** Robust session management, agent continuity across resets, inner emotional life.
+
+Deliverables:
+- **Short-term memory (STM)**: Rolling buffer of last 20 exchanges, injected into new sessions
+- **Context optimizer**: Smart context injection (memory sections, inner state, self-model, explorations)
+- **Exploration heartbeats**: Every 4th heartbeat allows curiosity-driven web exploration
+- **Inner state + journal**: Agent maintains `inner.json` (mood, energy, preoccupations) and `journal/` entries
+- **Self-model**: Agent maintains `SELF.md` (who it thinks it is)
+- **Session turn limit**: Auto-rotate after 80 exchanges to prevent history corruption
+- **Stream error detection**: Detect corrupted sessions from SSE errors, auto-clear and retry
+- **Heartbeat failure tracking**: Pause heartbeats after 2 consecutive failures, resume on session change
+- **Double-processing fix**: Context fetch moved after `setBusy(true)` to eliminate race condition
+- **Telegram dedup**: Track last 50 message_ids to prevent re-processing
+- **Telegraf polling liveness**: Monitor and restart polling if it dies silently (5min threshold)
+- **mcp-bridge improvements**: Connection retry (3 attempts), tool call timeout (120s), graceful shutdown
+
 ### Phase 3 — Read-Only Integrations 🔜 PLANNED
 
 **Goal:** Agent can read from Slack, Notion, Gmail, and Google Calendar.

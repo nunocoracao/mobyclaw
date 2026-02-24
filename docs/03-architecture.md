@@ -150,6 +150,7 @@ Messaging platforms are **adapters inside the gateway**, not separate containers
 | From -> To | Protocol | How |
 |---|---|---|
 | gateway -> moby | HTTP + SSE | POST to cagent's `/api/sessions/{id}/agent/{name}`, streams response via SSE |
+| gateway -> dashboard | HTTP | Context optimizer fetches relevant memory via `GET /api/context` |
 | moby -> tool-gateway | MCP (stdio-to-HTTP) | mcp-bridge bridges cagent's stdio MCP to tool-gateway's Streamable HTTP |
 | moby -> filesystem | Direct | cagent's built-in tools read/write bind-mounted dirs (~/.mobyclaw/, /workspace/, /source) |
 | moby -> dashboard | HTTP | Agent calls dashboard API via curl (e.g., `GET /api/tasks`, `POST /api/memory/compress`) |
