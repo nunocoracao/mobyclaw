@@ -17,7 +17,7 @@ theme:
     code: JetBrains Mono
   icon:
     repo: fontawesome/brands/github
-    logo: material/whale
+    logo: material/docker
   features:
     - navigation.sections
     - navigation.expand
