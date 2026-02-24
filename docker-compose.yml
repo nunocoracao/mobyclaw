@@ -2,8 +2,9 @@
 # mobyclaw — Docker Compose stack
 #
 # Services:
-#   moby     — AI agent (cagent serve api)
-#   gateway  — Message routing (Telegram, etc.)
+#   moby          — AI agent (cagent serve api)
+#   gateway       — Message routing (Telegram, etc.)
+#   tool-gateway  — MCP tool aggregator (browser, weather, etc.)
 #
 # Usage:
 #   mobyclaw up    — start everything
@@ -53,6 +54,24 @@ services:
       - MOBYCLAW_ACTIVE_HOURS=${MOBYCLAW_ACTIVE_HOURS:-07:00-23:00}
     depends_on:
       - moby
+    restart: unless-stopped
+    networks:
+      - mobyclaw
+
+  tool-gateway:
+    build:
+      context: ./tool-gateway
+      dockerfile: Dockerfile
+    expose:
+      - "8081"
+    ports:
+      - "3100:3100"
+    volumes:
+      - ${MOBYCLAW_HOME:-~/.mobyclaw}:/data/.mobyclaw
+    environment:
+      - MCP_PORT=8081
+      - ADMIN_PORT=3100
+      - AUTH_STORE_PATH=/data/.mobyclaw/tool-auth
     restart: unless-stopped
     networks:
       - mobyclaw

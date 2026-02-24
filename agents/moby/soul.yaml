@@ -340,6 +340,15 @@ agents:
       │       ├── tool-labels.js    # Tool name formatting
       │       └── adapters/
       │           └── telegram.js   # Telegram adapter
+      ├── tool-gateway/
+      │   ├── Dockerfile           # Tool gateway image
+      │   ├── package.json         # Tool gateway dependencies
+      │   ├── mcp-bridge           # stdio-to-HTTP bridge script (copied into moby)
+      │   └── src/
+      │       ├── index.js          # MCP server + admin API
+      │       └── tools/
+      │           ├── browser.js    # Web fetch + search
+      │           └── weather.js    # Weather (Open-Meteo)
       ├── architecture.md          # Design documentation
       └── README.md                # User docs
       ```
@@ -357,6 +366,10 @@ agents:
       - type: shell
       - type: filesystem
       - type: fetch
+      - type: mcp
+        command: /usr/local/bin/mcp-bridge
+        args:
+          - "http://tool-gateway:8081"
 
     add_date: true
     add_environment_info: true

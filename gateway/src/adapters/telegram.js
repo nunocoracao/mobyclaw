@@ -77,9 +77,7 @@ async function setupTelegram(agent, sessions, sendToAgentStream, { stopCurrentRu
   // -- /start -------------------------------------------------------
   bot.start((ctx) => {
     ctx.reply(
-      "Hey! I'm Moby, your personal AI agent.\n\n" +
-        "Just send me a message and I'll help you out. " +
-        "I remember our conversations, so feel free to pick up where we left off.\n\n" +
+      "Hello there!\n\n" +
         "Commands:\n" +
         "/new — fresh conversation\n" +
         "/stop — abort current task\n" +

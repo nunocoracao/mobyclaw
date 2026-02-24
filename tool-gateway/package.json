@@ -1,0 +1,17 @@
+{
+  "name": "mobyclaw-tool-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP aggregator gateway for mobyclaw — exposes external tools to the agent",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "express": "^4.21.0",
+    "cheerio": "^1.0.0",
+    "@mozilla/readability": "^0.5.0",
+    "jsdom": "^25.0.0"
+  }
+}

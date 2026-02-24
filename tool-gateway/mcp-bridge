@@ -1,0 +1,104 @@
+#!/usr/bin/env node
+// Set module search path to include global modules
+if (!process.env.NODE_PATH) {
+  const { execSync } = require("child_process");
+  try {
+    const globalRoot = execSync("npm root -g", { encoding: "utf-8" }).trim();
+    process.env.NODE_PATH = globalRoot;
+    require("module").Module._initPaths();
+  } catch {}
+}
+// ─────────────────────────────────────────────────────────────
+// mcp-bridge — bridges MCP stdio to Streamable HTTP transport
+//
+// Uses the MCP SDK:
+//   - McpServer (stdio) to talk to cagent
+//   - Client + StreamableHTTPClientTransport to talk to tool-gateway
+// ─────────────────────────────────────────────────────────────
+
+const GATEWAY_URL = process.argv[2] || "http://tool-gateway:8081";
+
+async function main() {
+  const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
+  const {
+    StreamableHTTPClientTransport,
+  } = require("@modelcontextprotocol/sdk/client/streamableHttp.js");
+  const {
+    StdioServerTransport,
+  } = require("@modelcontextprotocol/sdk/server/stdio.js");
+  const { McpServer } = require("@modelcontextprotocol/sdk/server/mcp.js");
+
+  // Wait for gateway
+  const adminUrl = GATEWAY_URL.replace(":8081", ":3100");
+  for (let i = 0; i < 60; i++) {
+    try {
+      const r = await fetch(`${adminUrl}/health`);
+      if (r.ok) break;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
+  // Connect to tool-gateway as MCP client
+  process.stderr.write(`[mcp-bridge] Connecting to ${GATEWAY_URL}/mcp...\n`);
+  const clientTransport = new StreamableHTTPClientTransport(
+    new URL(`${GATEWAY_URL}/mcp`)
+  );
+  const client = new Client({ name: "mcp-bridge", version: "1.0.0" });
+
+  try {
+    await client.connect(clientTransport);
+  } catch (err) {
+    process.stderr.write(`[mcp-bridge] Connection failed: ${err.message}\n`);
+    throw err;
+  }
+
+  // Get available tools from the gateway
+  const { tools: remoteTools } = await client.listTools();
+  process.stderr.write(
+    `[mcp-bridge] Connected, ${remoteTools.length} tools: ${remoteTools.map((t) => t.name).join(", ")}\n`
+  );
+
+  // Create a local MCP server (McpServer) that re-exposes those tools via stdio
+  const server = new McpServer({ name: "mcp-bridge", version: "1.0.0" });
+
+  // Re-register each remote tool locally so cagent discovers them
+  for (const tool of remoteTools) {
+    // Build the input schema object for the McpServer.tool() call
+    const shape = {};
+    if (tool.inputSchema?.properties) {
+      for (const [key, prop] of Object.entries(tool.inputSchema.properties)) {
+        shape[key] = {
+          type: prop.type || "string",
+          description: prop.description || "",
+        };
+      }
+    }
+
+    server.tool(tool.name, tool.description || "", shape, async (args) => {
+      process.stderr.write(`[mcp-bridge] → ${tool.name}\n`);
+      try {
+        const result = await client.callTool({
+          name: tool.name,
+          arguments: args,
+        });
+        return result;
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Error: ${err.message}` }],
+          isError: true,
+        };
+      }
+    });
+  }
+
+  // Connect to cagent via stdio
+  const stdioTransport = new StdioServerTransport();
+  await server.connect(stdioTransport);
+
+  process.stderr.write("[mcp-bridge] Bridge ready (stdio ↔ HTTP)\n");
+}
+
+main().catch((err) => {
+  process.stderr.write(`[mcp-bridge] Fatal: ${err.message}\n`);
+  process.exit(1);
+});

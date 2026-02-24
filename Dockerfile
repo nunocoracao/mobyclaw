@@ -15,6 +15,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Node.js (minimal, for mcp-bridge)
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install MCP SDK for the bridge
+RUN npm install -g @modelcontextprotocol/sdk@1.27.0
+
 # Install GitHub CLI
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
       -o /usr/share/keyrings/githubcli-archive-keyring.gpg && \
@@ -28,6 +36,9 @@ RUN groupadd -r agent && useradd -r -g agent -m -d /home/agent agent
 
 # Copy cagent binary (pre-built)
 COPY --chmod=755 cagent /usr/local/bin/cagent
+
+# Copy mcp-bridge script (stdio-to-HTTP relay for tool-gateway)
+COPY --chmod=755 tool-gateway/mcp-bridge /usr/local/bin/mcp-bridge
 
 # Create working directories
 RUN mkdir -p /agent /workspace && chown agent:agent /workspace
