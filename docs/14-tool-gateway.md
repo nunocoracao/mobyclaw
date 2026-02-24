@@ -417,7 +417,7 @@ The agent uses these via `shell` tool calls:
 - [x] Persistent browser context with 10min idle auto-close
 - [x] Tested end-to-end: navigated pages, filled/submitted forms, took screenshots
 - [x] Agent max_iterations raised to 15 (browser tasks need more steps)
-- [x] **Snapshot trimming**: `trimSnapshot()` reduces full accessibility trees (15K+ tokens) to ~1500 tokens. Filters noise roles, keeps interactive elements + landmarks, collapses skipped runs, hard-caps at 6000 chars. `browser_snapshot` accepts `full=true` for uncompacted output.
+- [x] **Snapshot trimming**: Tree-based `trimSnapshot()` — parses indentation tree, strips /url metadata, unwraps noise wrappers, removes separator text, collapses repeated siblings, hard-caps at 5000 chars. Real-world results: HN 59KB→1.4KB (98%), GitHub 53KB→5KB (91%), Wikipedia 135KB→5KB (96%). `browser_snapshot` accepts `full=true` for uncompacted output.
 
 ### Phase 2: Notion Integration
 - [ ] Add Notion remote MCP as upstream server
