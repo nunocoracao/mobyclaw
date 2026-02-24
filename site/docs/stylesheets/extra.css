@@ -1,10 +1,79 @@
+/* ─── Color tokens (match landing page) ─────── */
 :root {
   --md-primary-fg-color: #38bdf8;
-  --md-primary-bg-color: #0a0e1a;
+  --md-primary-bg-color: #0d1220;
   --md-accent-fg-color: #818cf8;
 }
 
 [data-md-color-scheme="slate"] {
   --md-default-bg-color: #0a0e1a;
   --md-default-fg-color--light: #94a3b8;
+
+  /* Header blends with top bar */
+  --md-primary-fg-color: #38bdf8;
+  --md-primary-bg-color: #0d1220;
+}
+
+/* ─── Header tweaks ─────────────────────────── */
+.md-header {
+  background: #0d1220 !important;
+  border-bottom: 1px solid #1e293b;
+  box-shadow: none !important;
+}
+
+/* ─── Announce bar (our top bar) ────────────── */
+.md-banner {
+  background: #070b14 !important;
+  border-bottom: 1px solid #1e293b;
+}
+
+.md-banner__inner {
+  margin: 0 !important;
+  max-width: none !important;
+  font-size: inherit !important;
+}
+
+/* ─── Sidebar ───────────────────────────────── */
+.md-sidebar {
+  border-right-color: #1e293b;
+}
+
+/* ─── Code blocks match landing page ────────── */
+.highlight code,
+.highlighttable code,
+code {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+}
+
+.md-typeset code {
+  background: #1a2236;
+  border: 1px solid #1e293b;
+}
+
+.md-typeset pre > code {
+  background: #1a2236;
+}
+
+/* ─── Links ─────────────────────────────────── */
+.md-typeset a {
+  color: #38bdf8;
+}
+
+.md-typeset a:hover {
+  color: #7dd3fc;
+}
+
+/* ─── Tables ────────────────────────────────── */
+.md-typeset table:not([class]) {
+  border: 1px solid #1e293b;
+}
+
+.md-typeset table:not([class]) th {
+  background: #111827;
+}
+
+/* ─── Footer ────────────────────────────────── */
+.md-footer {
+  background: #070b14;
+  border-top: 1px solid #1e293b;
 }

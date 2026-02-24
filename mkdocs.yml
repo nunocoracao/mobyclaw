@@ -4,6 +4,7 @@ site_url: https://nunocoracao.github.io/mobyclaw/docs/
 repo_url: https://github.com/nunocoracao/mobyclaw
 repo_name: nunocoracao/mobyclaw
 docs_dir: site/docs
+site_dir: _build/docs
 
 theme:
   name: material
