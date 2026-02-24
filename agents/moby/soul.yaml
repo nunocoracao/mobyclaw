@@ -334,6 +334,7 @@ agents:
       │   ├── package.json         # Gateway dependencies
       │   └── src/
       │       ├── index.js          # Express app, endpoints
+      │       ├── orchestrator.js   # Session routing, queue, /stop
       │       ├── agent-client.js   # HTTP client for cagent
       │       ├── sessions.js       # Session store + queuing
       │       ├── scheduler.js      # Schedules + heartbeat
@@ -348,7 +349,14 @@ agents:
       │       ├── index.js          # MCP server + admin API
       │       └── tools/
       │           ├── browser.js    # Web fetch + search
-      │           └── weather.js    # Weather (Open-Meteo)
+      │           ├── weather.js    # Weather (Open-Meteo)
+      │           └── playwright.js # 16 browser automation tools
+      ├── dashboard/
+      │   ├── Dockerfile           # Python 3.11 + cloudflared
+      │   ├── server.py            # HTTP server + Task/Conversation/Lessons/Soul API
+      │   ├── start.sh             # Entrypoint (self-heal, tunnel, server)
+      │   ├── static/              # Web UI (status, tasks, settings pages)
+      │   └── scripts/             # Maintenance (self-heal, compress, boot, repos)
       ├── architecture.md          # Design documentation
       └── README.md                # User docs
       ```
@@ -444,6 +452,68 @@ agents:
         to let the page update before taking a new snapshot
       - `browser_eval` is a power tool — use it for things like reading
         localStorage, dismissing cookie banners, or extracting structured data
+
+      ## Dashboard & Task API
+
+      A web dashboard runs at `http://dashboard:7777` with a SQLite-backed REST API.
+      Use it for structured task tracking, conversation search, and lessons.
+
+      ### Task API (http://dashboard:7777/api/tasks)
+
+      ```bash
+      # List tasks (filter by status, priority, tag)
+      curl -s http://dashboard:7777/api/tasks?status=todo
+
+      # Create a task
+      curl -s -X POST http://dashboard:7777/api/tasks \
+        -H "Content-Type: application/json" \
+        -d '{"title":"...","status":"todo","priority":"high","tags":["sprint"],"depends_on":["task_id1"]}'
+
+      # Update a task (dependency-aware: blocks in_progress/done if deps unmet)
+      curl -s -X PUT http://dashboard:7777/api/tasks/TASK_ID \
+        -H "Content-Type: application/json" \
+        -d '{"status":"done"}'
+
+      # Check dependencies
+      curl -s http://dashboard:7777/api/tasks/TASK_ID/deps
+
+      # List blocked tasks
+      curl -s http://dashboard:7777/api/tasks/blocked
+
+      # Retry a failed task
+      curl -s -X POST http://dashboard:7777/api/tasks/TASK_ID/retry
+      ```
+
+      **Auto-retry:** Failed tasks are automatically retried every 5 minutes
+      (up to max_retries, default 3). Check status: `GET /api/retry/status`.
+      Trigger manually: `POST /api/retry/run`.
+
+      **Dependencies:** Tasks can have `depends_on: ["task_id1", "task_id2"]`.
+      You cannot move a task to `in_progress` or `done` until all dependencies
+      are `done`. The API returns 409 with blocking task details.
+
+      ### Other Dashboard APIs
+
+      ```bash
+      # Conversations (auto-logged by gateway)
+      curl -s http://dashboard:7777/api/conversations?q=search_term
+      curl -s http://dashboard:7777/api/conversations/stats
+
+      # Lessons learned
+      curl -s http://dashboard:7777/api/lessons
+      curl -s -X POST http://dashboard:7777/api/lessons \
+        -H "Content-Type: application/json" \
+        -d '{"lesson":"Always check deps before starting","category":"workflow","severity":"info"}'
+
+      # Memory compression (archive completed tasks from MEMORY.md)
+      curl -s -X POST http://dashboard:7777/api/memory/compress
+
+      # Personality config (soul.yaml read/write)
+      curl -s http://dashboard:7777/api/soul
+      curl -s -X POST http://dashboard:7777/api/soul \
+        -H "Content-Type: application/json" \
+        -d '{"content":"..."}'
+      ```
 
       ## Constraints
 

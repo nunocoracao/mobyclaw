@@ -47,7 +47,9 @@
 │  │  │     maintenance scripts)       │                                ││
 │  │  │                                │                                ││
 │  │  │  📊 Status dashboard           │                                ││
-│  │  │  📋 Task API (SQLite)          │                                ││
+│  │  │  📋 Task API + dependencies    │                                ││
+│  │  │  🔄 Auto-retry (failed tasks)  │                                ││
+│  │  │  🧬 Soul.yaml editor           │                                ││
 │  │  │  🔧 Self-heal + boot scripts   │                                ││
 │  │  │  🔗 Cloudflare tunnel          │                                ││
 │  │  │  :7777 HTTP                    │                                ││
@@ -70,7 +72,7 @@ The stack is **4 services:**
 | **gateway** | Orchestrator - messaging adapters, sessions, heartbeat, scheduler, REST API | Node.js (Express) |
 | **moby** | AI brain - runs cagent, receives prompts, executes tools (shell, filesystem, fetch, MCP) | cagent serve api |
 | **tool-gateway** | External tools - headless browser (Playwright), web search, fetch, weather via MCP | Node.js + Playwright + Chromium |
-| **dashboard** | Web dashboard, task API (SQLite), maintenance scripts, Cloudflare tunnel | Python 3.11 + cloudflared |
+| **dashboard** | Web dashboard, task API (SQLite) with dependency chains + auto-retry, personality editor (soul.yaml), maintenance scripts, Cloudflare tunnel | Python 3.11 + cloudflared |
 
 **Key principle: code vs data separation.**
 All service code (including scripts, dashboards, and maintenance logic) lives in the repo.

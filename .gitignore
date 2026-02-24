@@ -26,3 +26,4 @@ cagent
 # Node
 node_modules/
 _build/
+dashboard/__pycache__/

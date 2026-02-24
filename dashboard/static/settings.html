@@ -94,6 +94,20 @@
     <div class="info-grid" id="system-info"></div>
   </div>
 
+  <!-- Soul.yaml Editor -->
+  <div class="section">
+    <h2>🧬 Personality (soul.yaml)</h2>
+    <div class="card">
+      <p>Edit the agent's personality, model, and behavior. <strong>⚠️ Changes require a container restart.</strong></p>
+      <textarea id="soul-editor" spellcheck="false" style="min-height:400px"></textarea>
+      <div class="btn-row">
+        <button class="btn" onclick="saveSoul()">Save soul.yaml</button>
+        <button class="btn btn-ghost" onclick="loadSoul()">Reload</button>
+        <button class="btn btn-ghost" onclick="triggerRestart()" title="Restart agent container to apply changes">🔄 Restart Agent</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Memory Editor -->
   <div class="section">
     <h2>🧠 Memory (MEMORY.md)</h2>
@@ -128,6 +142,19 @@
     </div>
   </div>
 
+  <!-- Auto-Retry Status -->
+  <div class="section">
+    <h2>🔄 Auto-Retry</h2>
+    <div class="card">
+      <p>Failed tasks are automatically retried every 5 minutes (up to max_retries).</p>
+      <div id="retry-status" style="margin-bottom:0.8rem"></div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="runRetryNow()">↻ Retry Now</button>
+        <button class="btn btn-ghost" onclick="loadRetryStatus()">Refresh</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Conversations Index -->
   <div class="section">
     <h2>💬 Conversation Index</h2>
@@ -142,6 +169,65 @@
 <div class="toast" id="toast"></div>
 
 <script>
+async function loadSoul() {
+  const resp = await fetch('/api/soul');
+  const data = await resp.json();
+  if (data.error) {
+    document.getElementById('soul-editor').value = '# soul.yaml not found at ' + (data.path || 'unknown path');
+  } else {
+    document.getElementById('soul-editor').value = data.content || '';
+  }
+}
+
+async function saveSoul() {
+  const content = document.getElementById('soul-editor').value;
+  if (!content.trim()) { toast('Cannot save empty soul.yaml!'); return; }
+  const resp = await fetch('/api/soul', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ content })
+  });
+  const data = await resp.json();
+  if (data.error) { toast('Error: ' + data.error); }
+  else { toast('soul.yaml saved! Restart agent to apply.'); }
+}
+
+async function triggerRestart() {
+  if (!confirm('Restart the agent container? Current conversation will end.')) return;
+  try {
+    await fetch('/api/soul', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ content: document.getElementById('soul-editor').value })
+    });
+    toast('soul.yaml saved. Restart signal sent to agent.');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+async function loadRetryStatus() {
+  try {
+    const resp = await fetch('/api/retry/status');
+    const data = await resp.json();
+    const el = document.getElementById('retry-status');
+    el.innerHTML = `
+      <div class="info-grid">
+        <div class="info-item"><div class="label">Interval</div><div class="value">${data.auto_retry_interval}s</div></div>
+        <div class="info-item"><div class="label">Failed Tasks</div><div class="value">${data.failed_total}</div></div>
+        <div class="info-item"><div class="label">Eligible for Retry</div><div class="value">${data.eligible_for_retry}</div></div>
+      </div>
+      ${data.failed_tasks.length ? '<div style="margin-top:0.6rem;font-size:0.75rem;color:#ef4444">' + 
+        data.failed_tasks.map(t => `${esc(t.title)} (${t.retry_count}/${t.max_retries})`).join('<br>') + '</div>' : ''}
+    `;
+  } catch(e) { document.getElementById('retry-status').innerHTML = '<div style="color:#ef4444">Failed to load</div>'; }
+}
+
+async function runRetryNow() {
+  const resp = await fetch('/api/retry/run', { method: 'POST' });
+  const data = await resp.json();
+  toast(`Retried ${data.count} task(s)`);
+  loadRetryStatus();
+}
+
 async function loadSystemInfo() {
   const resp = await fetch('/api/status');
   const data = await resp.json();
@@ -258,6 +344,8 @@ function toast(msg) {
 function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
 
 // Init
+loadSoul();
+loadRetryStatus();
 loadSystemInfo();
 loadMemory();
 loadLessons();

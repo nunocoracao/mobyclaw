@@ -51,7 +51,7 @@ mobyclaw/                          # CODE — git-tracked, versioned, ships as c
 │
 ├── dashboard/                     # Dashboard + task API + maintenance scripts service
 │   ├── Dockerfile                 # Python 3.11 + cloudflared
-│   ├── server.py                  # Dashboard HTTP server + Task API (SQLite)
+│   ├── server.py                  # HTTP server + Task API (deps, auto-retry) + Soul.yaml API
 │   ├── start.sh                   # Entrypoint: self-heal, boot context, tunnel, server
 │   ├── static/                    # Dashboard web pages
 │   │   ├── index.html             # Status overview page

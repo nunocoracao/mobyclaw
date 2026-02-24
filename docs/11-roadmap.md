@@ -56,11 +56,15 @@ Deliverables:
 
 Deliverables:
 - **dashboard container**: Python 3.11 HTTP server with SQLite task database
-- **Web UI**: Status overview, task management, settings pages
-- **Task API**: Full CRUD REST API with history, priorities, tags, subtasks, retry
-- **Conversation indexing API**: Log and search conversation summaries (schema ready)
-- **Lessons API**: Track lessons learned from experience
-- **Memory management**: Compression API to archive completed tasks from MEMORY.md
+- **Web UI**: Status overview, task management, settings pages (with soul.yaml editor)
+- **Task API**: Full CRUD REST API with history, priorities, tags, subtasks
+- **Task dependency chains**: `depends_on` field with execution-time blocking (409 if deps unmet)
+- **Auto-retry system**: Background thread retries failed tasks every 5 min (up to max_retries)
+- **Manual retry**: `POST /api/tasks/:id/retry` endpoint
+- **Personality tuning**: Read/write soul.yaml via API + settings page editor with backup
+- **Conversation indexing**: Gateway auto-logs every turn; search, filter, stats endpoints
+- **Lessons API**: Track lessons learned from experience (category, severity, auto-detect)
+- **Memory compression**: Archive completed tasks from MEMORY.md to dated files
 - **Self-healing boot**: Health checks and auto-fix on startup (`self-heal.sh`)
 - **Boot context generation**: Compact BOOT.md from MEMORY.md (`generate-boot.sh`)
 - **Cloudflare tunnel**: Optional remote dashboard access via trycloudflare.com

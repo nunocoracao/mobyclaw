@@ -16,6 +16,8 @@ import subprocess
 import os
 import re
 import uuid
+import threading
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlparse, parse_qs
 
@@ -24,6 +26,8 @@ MOBY_DIR = os.environ.get("MOBYCLAW_DATA", "/data/.mobyclaw")
 STATIC_DIR = os.environ.get("STATIC_DIR", "/app/static")
 DB_PATH = f"{MOBY_DIR}/data/tasks.db"
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://gateway:3000")
+SOUL_YAML_PATH = f"{MOBY_DIR}/soul.yaml"
+AUTO_RETRY_INTERVAL = int(os.environ.get("AUTO_RETRY_INTERVAL", 300))  # 5 min
 
 # ─── SQLite Task DB ────────────────────────────────────────
 
@@ -142,6 +146,21 @@ def update_task(task_id, data):
         conn.close()
         return None
 
+    # Dependency check: block transition to in_progress/done if deps not met
+    if "status" in data and data["status"] in ("in_progress", "done"):
+        old_dict = dict(old)
+        deps = json.loads(old_dict.get("depends_on", "[]"))
+        if deps:
+            dep_check = check_dependencies(task_id)
+            if dep_check and not dep_check["satisfied"]:
+                conn.close()
+                blocking_names = [b["title"] for b in dep_check["blocking"]]
+                return {
+                    "error": "blocked_by_dependencies",
+                    "message": f"Cannot set status to '{data['status']}': blocked by {len(dep_check['blocking'])} unfinished dependencies",
+                    "blocking": dep_check["blocking"]
+                }
+
     fields = []
     values = []
     for key in ["title", "description", "status", "priority", "tags", "parent_id", "depends_on", "due_date", "max_retries", "last_error", "metadata"]:
@@ -238,6 +257,130 @@ def retry_task(task_id):
     result = dict(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone())
     conn.close()
     return result
+
+# ─── Task Dependency Checking ───────────────────────────────
+
+def check_dependencies(task_id):
+    """Check if all dependencies of a task are satisfied (done).
+    Returns {"satisfied": bool, "blocking": [...], "total": int, "done": int}"""
+    conn = get_db()
+    task = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if not task:
+        conn.close()
+        return None
+
+    deps = json.loads(dict(task).get("depends_on", "[]"))
+    if not deps:
+        conn.close()
+        return {"satisfied": True, "blocking": [], "total": 0, "done": 0}
+
+    blocking = []
+    done_count = 0
+    for dep_id in deps:
+        dep = conn.execute("SELECT id, title, status FROM tasks WHERE id=?", (dep_id,)).fetchone()
+        if dep:
+            dep = dict(dep)
+            if dep["status"] == "done":
+                done_count += 1
+            else:
+                blocking.append({"id": dep["id"], "title": dep["title"], "status": dep["status"]})
+        else:
+            blocking.append({"id": dep_id, "title": "(not found)", "status": "missing"})
+
+    conn.close()
+    return {
+        "satisfied": len(blocking) == 0,
+        "blocking": blocking,
+        "total": len(deps),
+        "done": done_count
+    }
+
+def get_blocked_tasks():
+    """Return all tasks that have unsatisfied dependencies."""
+    conn = get_db()
+    tasks_with_deps = conn.execute(
+        "SELECT id, title, status, depends_on FROM tasks WHERE depends_on != '[]' AND status NOT IN ('done','cancelled')"
+    ).fetchall()
+    conn.close()
+
+    blocked = []
+    for t in tasks_with_deps:
+        t = dict(t)
+        dep_check = check_dependencies(t["id"])
+        if dep_check and not dep_check["satisfied"]:
+            blocked.append({
+                "id": t["id"],
+                "title": t["title"],
+                "status": t["status"],
+                "blocking": dep_check["blocking"]
+            })
+    return blocked
+
+# ─── Auto-Retry System ──────────────────────────────────────
+
+def auto_retry_failed_tasks():
+    """Automatically retry failed tasks that haven't exceeded max_retries.
+    Called periodically by the retry thread."""
+    conn = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    failed = conn.execute(
+        "SELECT * FROM tasks WHERE status='failed' AND retry_count < max_retries"
+    ).fetchall()
+    conn.close()
+
+    retried = []
+    for task in failed:
+        task = dict(task)
+        result = retry_task(task["id"])
+        if result and "error" not in result:
+            retried.append({"id": task["id"], "title": task["title"], "retry_count": result["retry_count"]})
+            print(f"[auto-retry] Retried task: {task['title']} (attempt {result['retry_count']})")
+
+    return retried
+
+def start_auto_retry_thread():
+    """Start background thread that periodically retries failed tasks."""
+    def retry_loop():
+        while True:
+            time.sleep(AUTO_RETRY_INTERVAL)
+            try:
+                retried = auto_retry_failed_tasks()
+                if retried:
+                    print(f"[auto-retry] Retried {len(retried)} tasks")
+            except Exception as e:
+                print(f"[auto-retry] Error: {e}")
+
+    thread = threading.Thread(target=retry_loop, daemon=True)
+    thread.start()
+    print(f"[auto-retry] Started (interval: {AUTO_RETRY_INTERVAL}s)")
+
+# ─── Soul.yaml API ──────────────────────────────────────────
+
+def read_soul_yaml():
+    """Read the agent's soul.yaml configuration."""
+    if not os.path.exists(SOUL_YAML_PATH):
+        return {"error": "soul.yaml not found", "path": SOUL_YAML_PATH}
+    with open(SOUL_YAML_PATH, "r") as f:
+        content = f.read()
+    return {"content": content, "path": SOUL_YAML_PATH, "size": len(content)}
+
+def write_soul_yaml(content):
+    """Write updated soul.yaml. Creates a backup first."""
+    if not content or not content.strip():
+        return {"error": "Empty content not allowed"}
+
+    # Backup current
+    if os.path.exists(SOUL_YAML_PATH):
+        backup_path = f"{SOUL_YAML_PATH}.bak"
+        with open(SOUL_YAML_PATH, "r") as f:
+            old_content = f.read()
+        with open(backup_path, "w") as f:
+            f.write(old_content)
+
+    with open(SOUL_YAML_PATH, "w") as f:
+        f.write(content)
+
+    return {"ok": True, "path": SOUL_YAML_PATH, "size": len(content)}
 
 # ─── Conversation Indexing ──────────────────────────────────
 
@@ -436,6 +579,39 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             else:
                 self.send_json({"content": ""})
 
+        # Soul.yaml API
+        elif path == "/api/soul":
+            self.send_json(read_soul_yaml())
+
+        # Task dependency API
+        elif path.startswith("/api/tasks/") and path.endswith("/deps"):
+            task_id = path.split("/")[-2]
+            result = check_dependencies(task_id)
+            if result:
+                self.send_json(result)
+            else:
+                self.send_json({"error": "Not found"}, 404)
+        elif path == "/api/tasks/blocked":
+            self.send_json(get_blocked_tasks())
+
+        # Auto-retry status
+        elif path == "/api/retry/status":
+            conn = get_db()
+            failed = conn.execute(
+                "SELECT id, title, retry_count, max_retries FROM tasks WHERE status='failed'"
+            ).fetchall()
+            eligible = conn.execute(
+                "SELECT id, title, retry_count, max_retries FROM tasks WHERE status='failed' AND retry_count < max_retries"
+            ).fetchall()
+            conn.close()
+            self.send_json({
+                "auto_retry_interval": AUTO_RETRY_INTERVAL,
+                "failed_total": len(failed),
+                "eligible_for_retry": len(eligible),
+                "failed_tasks": [dict(r) for r in failed],
+                "eligible_tasks": [dict(r) for r in eligible]
+            })
+
         # Tunnel info
         elif path == "/api/tunnel":
             tunnel_info = f"{MOBY_DIR}/data/tunnel-info.json"
@@ -482,6 +658,15 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             with open(memory_path, "w") as f:
                 f.write(body.get("content", ""))
             self.send_json({"ok": True})
+        elif path == "/api/soul":
+            result = write_soul_yaml(body.get("content", ""))
+            if "error" in result:
+                self.send_json(result, 400)
+            else:
+                self.send_json(result)
+        elif path == "/api/retry/run":
+            retried = auto_retry_failed_tasks()
+            self.send_json({"retried": retried, "count": len(retried)})
         else:
             self.send_json({"error": "Not found"}, 404)
 
@@ -493,10 +678,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         if path.startswith("/api/tasks/"):
             task_id = path.split("/")[-1]
             task = update_task(task_id, body)
-            if task:
-                self.send_json(task)
-            else:
+            if task is None:
                 self.send_json({"error": "Not found"}, 404)
+            elif "error" in task:
+                self.send_json(task, 409)
+            else:
+                self.send_json(task)
         else:
             self.send_json({"error": "Not found"}, 404)
 
@@ -615,6 +802,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     init_db()
+    start_auto_retry_thread()
     server = http.server.HTTPServer(("0.0.0.0", PORT), DashboardHandler)
     print(f"mobyclaw dashboard running on http://0.0.0.0:{PORT}")
     print(f"  DB: {DB_PATH}")

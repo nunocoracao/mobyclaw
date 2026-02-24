@@ -27,7 +27,8 @@ action on your behalf.
 - **Persistent memory** - remembers who you are, what you've discussed, your preferences (plain Markdown files you can read and edit)
 - **Chat via Telegram** - streaming responses with real-time tool status indicators
 - **CLI chat** - interactive terminal sessions and one-shot prompts
-- **Web dashboard** - status overview, task management, settings (with optional Cloudflare tunnel for remote access)
+- **Web dashboard** - status overview, task management with dependencies, personality editor, auto-retry, conversation search (with optional Cloudflare tunnel for remote access)
+- **Task management** - SQLite-backed task API with dependencies, auto-retry on failure, priorities, tags, and history
 - **Web browsing** - full headless browser (Playwright + Chromium) for navigating pages, filling forms, creating accounts, taking screenshots
 - **Web search & reading** - search the web via DuckDuckGo, fetch and extract clean text from any URL
 - **Weather** - current conditions and forecasts for any location
@@ -66,9 +67,11 @@ action on your behalf.
 │  │                   │            │                 │             │
 │  │  📊 Status UI     │            │  🌐 Browser     │             │
 │  │  📋 Task API      │            │  🔍 Search      │             │
-│  │  🔧 Self-heal     │            │  📄 Fetch       │             │
-│  │  🔗 Tunnel        │            │  🌤️ Weather     │             │
-│  └──────────────────┘            │  🎭 Playwright  │             │
+│  │  🔗 Dependencies  │            │  📄 Fetch       │             │
+│  │  🔄 Auto-retry    │            │  🌤️ Weather     │             │
+│  │  🧬 Soul editor   │            │  🎭 Playwright  │             │
+│  │  🔧 Self-heal     │            └─────────────────┘             │
+│  │  🔗 Tunnel        │
 │                                   └─────────────────┘             │
 │                                                                    │
 │  Volumes:                                                          │
@@ -85,7 +88,7 @@ action on your behalf.
 | **gateway** | Orchestrator - messaging, sessions, scheduling, heartbeat, REST API | Node.js / Express |
 | **moby** | AI brain - LLM inference, tool execution, memory | cagent |
 | **tool-gateway** | External tools - web browser, search, fetch, weather via MCP | Node.js / Playwright |
-| **dashboard** | Web UI, task API (SQLite), maintenance scripts, Cloudflare tunnel | Python 3.11 |
+| **dashboard** | Web UI, task API (SQLite), personality editor, auto-retry, Cloudflare tunnel | Python 3.11 |
 
 **Architecture principle: code vs data.**
 All service code lives in the repo and ships as container images.
@@ -342,7 +345,7 @@ the [online docs](https://nunocoracao.github.io/mobyclaw/docs/).
 - [x] **Phase 2** — Gateway + Telegram streaming, heartbeat, scheduling, reminders
 - [x] **Phase 2.5** — Session UX (queue, collect mode, /stop, /status)
 - [x] **Phase 2.7** — Tool gateway (web browsing, search, fetch, weather, 19 MCP tools)
-- [x] **Phase 2.8** — Dashboard, task API, maintenance scripts, code/data separation
+- [x] **Phase 2.8** — Dashboard, task API (deps + auto-retry), personality editor, maintenance scripts, code/data separation
 - [ ] **Phase 3** — Read-only integrations (Notion, Gmail, Calendar, Slack)
 - [ ] **Phase 4** — More messaging channels, vector memory, webhook ingress
 - [ ] **Phase 5** — Production hardening (seccomp, network policy, monitoring)
