@@ -154,6 +154,30 @@ class SessionStore {
 
   setBusy(busy) {
     this.busy = busy;
+    if (busy) {
+      this._busySince = Date.now();
+    } else {
+      this._busySince = null;
+    }
+  }
+
+  /**
+   * Safety watchdog: if busy for longer than maxMs, auto-clear.
+   * This catches cases where the agent connection dies silently
+   * (e.g., container restart without TCP RST) and the busy flag
+   * gets stuck. Called periodically from a timer.
+   */
+  checkBusyWatchdog(maxMs = 10 * 60 * 1000) {
+    if (!this.busy || !this._busySince) return false;
+    if (Date.now() - this._busySince > maxMs) {
+      console.error(
+        `[session] WATCHDOG: busy for ${Math.round((Date.now() - this._busySince) / 1000)}s — force-clearing`
+      );
+      this.busy = false;
+      this._busySince = null;
+      return true; // was stuck
+    }
+    return false;
   }
 
   /**

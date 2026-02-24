@@ -113,6 +113,29 @@ async function main() {
   await agent.waitForReady(120_000);
   console.log(`Agent is ready`);
 
+  // Validate persisted session — cagent sessions are in-memory and
+  // don't survive container restarts. If moby restarted, the old
+  // session ID is stale and would cause a 500 on first use.
+  const restoredId = session.getSessionId();
+  if (restoredId) {
+    const valid = await agent.validateSession(restoredId);
+    if (!valid) {
+      console.log(`[session] Stale session ${restoredId.slice(0, 8)}... — clearing`);
+      session.clear();
+      // Pre-create a fresh session so the first message is instant
+      try {
+        const freshId = await agent.createSession();
+        session.setSessionId(freshId);
+        console.log(`[session] Pre-created fresh session: ${freshId.slice(0, 8)}...`);
+      } catch (err) {
+        console.error(`[session] Failed to pre-create session: ${err.message}`);
+        // Not fatal — ensureSession() will create one on first message
+      }
+    } else {
+      console.log(`[session] Restored session ${restoredId.slice(0, 8)}... is valid`);
+    }
+  }
+
   // -- Config summary -----------------------------------------------
   console.log(`  Queue mode: ${session.queueMode}`);
   console.log(`  Daily reset: ${session.dailyResetHour}:00`);
@@ -142,6 +165,11 @@ async function main() {
 
   startSchedulerLoop(scheduleStore, registry, agentPromptFn, 30_000);
   startHeartbeat(agentPromptFn, channelStore, { session });
+
+  // Busy watchdog: detect stuck sessions (e.g., agent container died)
+  setInterval(() => {
+    session.checkBusyWatchdog(10 * 60 * 1000); // 10 min max
+  }, 30_000);
 
   // -- Express app --------------------------------------------------
 

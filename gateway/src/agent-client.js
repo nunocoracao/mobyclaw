@@ -76,6 +76,21 @@ class AgentClient {
     return JSON.parse(body).id;
   }
 
+  /**
+   * Check if a session ID is still valid in cagent.
+   * cagent sessions are in-memory only — they don't survive restarts.
+   * Returns true if valid, false if stale/gone.
+   */
+  async validateSession(sessionId) {
+    try {
+      const res = await this._request("GET", `/api/sessions/${sessionId}`);
+      await this._readBody(res);
+      return res.statusCode === 200;
+    } catch {
+      return false;
+    }
+  }
+
   async prompt(message, sessionId) {
     return this.promptStream(message, sessionId);
   }
@@ -114,6 +129,19 @@ class AgentClient {
       };
 
       const req = http.request(options, (res) => {
+        // Set socket-level timeout: if no TCP data for 2 minutes,
+        // the connection is probably dead (container restart, network
+        // issue). This catches the case where moby restarts mid-stream
+        // and Docker doesn't send a TCP RST.
+        if (res.socket) {
+          res.socket.setKeepAlive(true, 30_000);
+          res.socket.setTimeout(2 * 60 * 1000, () => {
+            res.destroy(
+              new Error("Socket idle for 2 minutes — connection likely dead")
+            );
+          });
+        }
+
         if (res.statusCode !== 200) {
           let errBody = "";
           res.on("data", (c) => (errBody += c));
