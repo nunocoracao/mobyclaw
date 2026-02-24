@@ -27,7 +27,7 @@ for f in MEMORY.md TASKS.md LESSONS.md HEARTBEAT.md; do
 done
 
 # 2. Check directories exist
-for d in memory memory/archives data dashboard scripts; do
+for d in memory memory/archives data dashboard scripts state journal; do
   if [ ! -d "$MOBY_DIR/$d" ]; then
     fix "Directory $d missing, creating..."
     mkdir -p "$MOBY_DIR/$d"

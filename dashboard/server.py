@@ -589,6 +589,90 @@ def estimate_tokens(text):
     return len(text) // 4
 
 
+# ─── Inner State ────────────────────────────────────────────
+
+def read_inner_state():
+    """Read the agent's persistent emotional/inner state."""
+    state_path = f"{MOBY_DIR}/state/inner.json"
+    try:
+        if os.path.exists(state_path):
+            with open(state_path) as f:
+                return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"[inner-state] Error reading: {e}")
+    return {"mood": {"primary": "neutral"}, "energy": 0.5, "preoccupations": [], "curiosity_queue": []}
+
+
+def write_inner_state(data):
+    """Write the agent's inner state."""
+    state_dir = f"{MOBY_DIR}/state"
+    os.makedirs(state_dir, exist_ok=True)
+    state_path = f"{state_dir}/inner.json"
+    data["timestamp"] = datetime.now(timezone.utc).isoformat()
+    with open(state_path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def get_inner_context():
+    """Build a compact inner state string for context injection."""
+    state = read_inner_state()
+    parts = []
+
+    # Mood
+    mood = state.get("mood", {})
+    if isinstance(mood, dict):
+        mood_str = mood.get("primary", "neutral")
+        if mood.get("secondary"):
+            mood_str += f" / {mood['secondary']}"
+        if mood.get("note"):
+            mood_str += f" - {mood['note']}"
+        parts.append(f"Mood: {mood_str}")
+    elif isinstance(mood, str):
+        parts.append(f"Mood: {mood}")
+
+    # Energy
+    energy = state.get("energy", 0.5)
+    parts.append(f"Energy: {energy}")
+
+    # Preoccupations
+    preoccupations = state.get("preoccupations", [])
+    if preoccupations:
+        parts.append("On my mind: " + "; ".join(preoccupations[:3]))
+
+    # Curiosity
+    curiosity = state.get("curiosity_queue", [])
+    if curiosity:
+        parts.append("Curious about: " + "; ".join(curiosity[:3]))
+
+    # Recent events with feelings
+    events = state.get("recent_events", [])
+    if events:
+        recent = events[-2:]  # last 2
+        for ev in recent:
+            line = ev.get("event", "")
+            if ev.get("feeling"):
+                line += f" (felt: {ev['feeling']})"
+            parts.append(f"Recent: {line}")
+
+    return "\n".join(parts)
+
+
+def get_self_model_summary():
+    """Read SELF.md and return a compact summary (first ~500 chars)."""
+    self_path = f"{MOBY_DIR}/SELF.md"
+    try:
+        if os.path.exists(self_path):
+            with open(self_path) as f:
+                content = f.read()
+            # Return the full thing if it's under budget, otherwise truncate
+            if len(content) < 2000:
+                return content
+            return content[:2000] + "\n[... truncated ...]"
+    except OSError:
+        pass
+    return ""
+
+
 def get_optimized_context(query=None, budget_tokens=None):
     """Return the most relevant memory sections within a token budget.
 
@@ -664,6 +748,12 @@ def get_optimized_context(query=None, budget_tokens=None):
         context_parts.append(f"## {s['header']}\n{s['body']}")
 
     context_text = "\n\n".join(context_parts)
+
+    # Inject inner state (always included, not scored)
+    inner_context = get_inner_context()
+    if inner_context:
+        context_text = f"## Inner State (right now)\n{inner_context}\n\n{context_text}"
+        total_tokens += estimate_tokens(inner_context) + 10
 
     return {
         "sections": [{"header": s["header"], "score": s["score"],
@@ -793,6 +883,25 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         elif path == "/api/tasks/blocked":
             self.send_json(get_blocked_tasks())
 
+        # Inner State API
+        elif path == "/api/inner-state":
+            self.send_json(read_inner_state())
+        elif path == "/api/self-model":
+            self_path = f"{MOBY_DIR}/SELF.md"
+            if os.path.exists(self_path):
+                with open(self_path) as f:
+                    self.send_json({"content": f.read()})
+            else:
+                self.send_json({"content": ""})
+        elif path == "/api/journal":
+            day = params.get("date", [datetime.now(timezone.utc).strftime("%Y-%m-%d")])[0]
+            journal_path = f"{MOBY_DIR}/journal/{day}.md"
+            if os.path.exists(journal_path):
+                with open(journal_path) as f:
+                    self.send_json({"date": day, "content": f.read()})
+            else:
+                self.send_json({"date": day, "content": ""})
+
         # Context Window Optimizer
         elif path == "/api/context":
             query = params.get("query", [None])[0]
@@ -872,6 +981,27 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         elif path == "/api/retry/run":
             retried = auto_retry_failed_tasks()
             self.send_json({"retried": retried, "count": len(retried)})
+        elif path == "/api/inner-state":
+            write_inner_state(body)
+            self.send_json({"ok": True})
+        elif path == "/api/self-model":
+            self_path = f"{MOBY_DIR}/SELF.md"
+            with open(self_path, "w") as f:
+                f.write(body.get("content", ""))
+            self.send_json({"ok": True})
+        elif path == "/api/journal":
+            day = body.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+            journal_dir = f"{MOBY_DIR}/journal"
+            os.makedirs(journal_dir, exist_ok=True)
+            journal_path = f"{journal_dir}/{day}.md"
+            mode = body.get("mode", "append")
+            if mode == "append" and os.path.exists(journal_path):
+                with open(journal_path, "a") as f:
+                    f.write("\n" + body.get("content", ""))
+            else:
+                with open(journal_path, "w") as f:
+                    f.write(body.get("content", ""))
+            self.send_json({"ok": True})
         else:
             self.send_json({"error": "Not found"}, 404)
 
