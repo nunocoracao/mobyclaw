@@ -23,7 +23,7 @@ cd mobyclaw
 | Feature | Description |
 |---|---|
 | 🧠 **Persistent Memory** | Remembers your name, preferences, projects, conversations — in plain Markdown files |
-| 🐳 **Runs in Docker** | One `docker compose up` — isolated, reproducible, portable |
+| 🐳 **Runs in Docker** | One `./mobyclaw up` — isolated, reproducible, portable |
 | 💬 **Chat via Telegram** | Streaming responses with real-time tool status |
 | ⏰ **Proactive & Scheduled** | Reminders, recurring tasks, periodic heartbeat checks |
 | 📁 **Workspace Access** | Mount your project folders — Moby reads and edits your actual code |

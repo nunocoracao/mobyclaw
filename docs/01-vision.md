@@ -13,7 +13,7 @@ Think: **OpenClaw, but containerized and powered by cagent.**
 - Reachable through your **messaging apps** (Telegram, WhatsApp, Discord, Slack, etc.)
 - Has **persistent memory** — it remembers who you are, what you've discussed, your preferences
 - **Proactive** — it can wake itself up via heartbeats, cron jobs, and scheduled tasks
-- Runs in **Docker Compose** — one `docker compose up` and you have a personal AI
+- Runs in **Docker Compose** — one `./mobyclaw up` and you have a personal AI
 - Powered by **cagent** — the agent loop, tool execution, and model inference
 
 ### What it is not

@@ -147,11 +147,21 @@ gateway routing (sendToAgentStream)
   (the request close event fires immediately when the POST body is consumed,
   not when the client disconnects — this was a subtle bug)
 
-**Telegram streaming**: Instead of waiting for the full response, the adapter:
-1. Sends a placeholder message as soon as the first token arrives (~1-2s)
-2. Edits that message every ~1.2s with accumulated text
-3. Shows tool status ("⏳ Writing to memory...") during tool calls
-4. Does a final edit when the stream completes
+**Telegram streaming**: The adapter uses a **message segmentation** model.
+Instead of merging everything into one message, tool status and response
+text are sent as separate Telegram messages:
+
+1. **Tool phases** get their own message, edited in-place as tools
+   start (⏳), receive args, and complete (✅/❌)
+2. **Text phases** get a separate message, streamed via edits as
+   tokens arrive. The first text send is delayed ~2.5s so the
+   notification preview shows meaningful content (not just one word).
+3. If the agent does multiple tool-text cycles, each cycle produces
+   new messages - so the user gets a notification for each text segment.
+
+This matches user expectations: each distinct response triggers a
+notification, tool status is visible but separate, and notification
+previews show real content.
 
 **CLI streaming**: `mobyclaw run` and `mobyclaw chat` connect to the SSE
 endpoint and print tokens directly to stdout as they arrive. Tool call
