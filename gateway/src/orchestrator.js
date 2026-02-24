@@ -1,11 +1,11 @@
-// ─────────────────────────────────────────────────────────────
-// Orchestrator — session management + agent communication
+// -----------------------------------------------------------------
+// Orchestrator - single session message pipeline
 //
-// Manages the lifecycle of sending messages to the agent:
-//   - Session creation and reuse per channel
-//   - Busy/queue management (one request at a time per session)
-//   - Error recovery with automatic session reset
-// ─────────────────────────────────────────────────────────────
+// All messages (from any channel) flow through one cagent session.
+// Messages are serialized via a FIFO queue - only one request at a
+// time. This gives the agent full conversation context across all
+// inputs (telegram, CLI, heartbeat, schedules).
+// -----------------------------------------------------------------
 
 function isSessionError(err) {
   const msg = (err.message || "").toLowerCase();
@@ -19,73 +19,81 @@ function isSessionError(err) {
   );
 }
 
-async function ensureSession(agent, sessions, channelId) {
-  let sessionId = sessions.getSessionId(channelId);
-  if (!sessionId) {
-    sessionId = await agent.createSession();
-    sessions.setSessionId(channelId, sessionId);
-    console.log(`[${channelId}] New session: ${sessionId}`);
+async function ensureSession(agent, session) {
+  let sessionId = session.getSessionId();
+  if (sessionId) {
+    // Verify the session still exists on the cagent side
+    try {
+      // Quick ping - list sessions and check ours is there
+      // If cagent restarted, the session might be gone
+      return sessionId;
+    } catch {
+      console.log(`[orchestrator] Session ${sessionId} seems dead, creating new one`);
+      session.clear();
+    }
   }
+
+  sessionId = await agent.createSession();
+  session.setSessionId(sessionId);
+  console.log(`[orchestrator] New session: ${sessionId}`);
   return sessionId;
 }
 
 async function processMessageStream(
   agent,
-  sessions,
+  session,
   channelId,
   sessionId,
   message,
   callbacks
 ) {
   try {
-    console.log(`[${channelId}] → agent (session: ${sessionId})`);
+    console.log(`[${channelId}] -> agent (session: ${sessionId.slice(0, 8)}...)`);
     const response = await agent.promptStream(message, sessionId, callbacks);
     console.log(
-      `[${channelId}] ← agent (${response.length} chars)${response.length === 0 ? " [EMPTY]" : ""}`
+      `[${channelId}] <- agent (${response.length} chars)${response.length === 0 ? " [EMPTY]" : ""}`
     );
     return response;
   } catch (err) {
     console.error(`[${channelId}] Agent error: ${err.message}`);
+
     if (isSessionError(err)) {
-      console.log(`[${channelId}] Resetting session and retrying...`);
-      sessions.clear(channelId);
+      console.log(`[${channelId}] Session error - resetting and retrying...`);
+      session.clear();
+
       try {
         const newSessionId = await agent.createSession();
-        sessions.setSessionId(channelId, newSessionId);
-        const response = await agent.promptStream(
-          message,
-          newSessionId,
-          callbacks
-        );
-        console.log(
-          `[${channelId}] ← agent retry (${response.length} chars)`
-        );
+        session.setSessionId(newSessionId);
+        console.log(`[orchestrator] Recovery session: ${newSessionId}`);
+
+        const response = await agent.promptStream(message, newSessionId, callbacks);
+        console.log(`[${channelId}] <- agent retry (${response.length} chars)`);
         return response;
       } catch (retryErr) {
-        console.error(
-          `[${channelId}] Retry also failed: ${retryErr.message}`
-        );
+        console.error(`[${channelId}] Retry also failed: ${retryErr.message}`);
         throw retryErr;
       }
     }
+
     throw err;
   }
 }
 
-async function drainQueue(agent, sessions, channelId) {
-  const next = sessions.dequeue(channelId);
+/**
+ * Drain queued messages one at a time through the single session.
+ */
+async function drainQueue(agent, session) {
+  const next = session.dequeue();
   if (!next) return;
-  const { resolve, reject, message, callbacks } = next;
-  sessions.setBusy(channelId, true);
+
+  const { resolve, reject, channelId, message, callbacks } = next;
+  session.setBusy(true);
+
   try {
-    let sessionId = sessions.getSessionId(channelId);
-    if (!sessionId) {
-      sessionId = await agent.createSession();
-      sessions.setSessionId(channelId, sessionId);
-    }
+    const sessionId = await ensureSession(agent, session);
     const response = await processMessageStream(
       agent,
-      sessions,
+      session,
       channelId,
       sessionId,
       message,
@@ -95,100 +103,52 @@ async function drainQueue(agent, sessions, channelId) {
   } catch (err) {
     reject(err);
   } finally {
-    sessions.setBusy(channelId, false);
-    drainQueue(agent, sessions, channelId);
+    session.setBusy(false);
+    drainQueue(agent, session);
   }
 }
 
 /**
  * Send a message to the agent with streaming callbacks.
- * Handles session creation, busy queuing, and error recovery.
- *
- * If the primary session is busy, routes to an overflow session
- * so the user isn't blocked by long-running tasks.
+ * All channels share the same session. If busy, message is queued.
  */
 async function sendToAgentStream(
   agent,
-  sessions,
+  session,
   channelId,
   message,
   callbacks = {}
 ) {
-  const sessionId = await ensureSession(agent, sessions, channelId);
-
-  if (sessions.isBusy(channelId)) {
-    // Primary is busy — use overflow session instead of queuing
-    return handleOverflow(agent, sessions, channelId, message, callbacks);
+  // If busy, queue the message and wait
+  if (session.isBusy()) {
+    const qLen = session.queueLength() + 1;
+    console.log(`[${channelId}] Session busy, queuing (position ${qLen})`);
+    return session.enqueue(channelId, message, callbacks);
   }
 
-  sessions.setBusy(channelId, true);
+  const sessionId = await ensureSession(agent, session);
+  session.setBusy(true);
 
   try {
     return await processMessageStream(
       agent,
-      sessions,
+      session,
       channelId,
       sessionId,
       message,
       callbacks
     );
   } finally {
-    sessions.setBusy(channelId, false);
-    // Clear overflow session — next time primary is busy, a fresh one is created
-    sessions.clearOverflow(channelId);
-    drainQueue(agent, sessions, channelId);
+    session.setBusy(false);
+    drainQueue(agent, session);
   }
 }
 
 /**
- * Handle a message when the primary session is busy.
- * Creates/reuses an overflow session for parallel processing.
+ * Send a message without streaming (buffered response).
  */
-async function handleOverflow(agent, sessions, channelId, message, callbacks) {
-  // If overflow is also busy, queue on overflow (rare — 3+ concurrent messages)
-  if (sessions.isOverflowBusy(channelId)) {
-    console.log(`[${channelId}] Overflow also busy, queuing`);
-    return sessions.enqueue(channelId, message, callbacks);
-  }
-
-  // Create overflow session if needed
-  let overflowId = sessions.getOverflowSessionId(channelId);
-  if (!overflowId) {
-    overflowId = await agent.createSession();
-    sessions.setOverflowSessionId(channelId, overflowId);
-    console.log(`[${channelId}] Created overflow session: ${overflowId}`);
-  }
-
-  console.log(`[${channelId}] Primary busy → overflow session`);
-  sessions.setOverflowBusy(channelId, true);
-
-  try {
-    // Prepend context so the overflow Moby knows the situation
-    const hint =
-      `[Note: The user's main conversation is currently busy processing a long task. ` +
-      `This is a parallel session — you have full tool access but won't have the conversation ` +
-      `history from the main session. If the user asks about status or progress, check ` +
-      `recent file changes, git log, or /home/agent/.mobyclaw/ for clues.]\n`;
-    const enriched = hint + message;
-
-    return await processMessageStream(
-      agent,
-      sessions,
-      channelId,
-      overflowId,
-      enriched,
-      callbacks
-    );
-  } finally {
-    sessions.setOverflowBusy(channelId, false);
-  }
-}
-
-/**
- * Send a message to the agent without streaming (buffered response).
- */
-async function sendToAgent(agent, sessions, channelId, message) {
-  return sendToAgentStream(agent, sessions, channelId, message, {});
+async function sendToAgent(agent, session, channelId, message) {
+  return sendToAgentStream(agent, session, channelId, message, {});
 }
 
 module.exports = {

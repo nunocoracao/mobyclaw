@@ -38,7 +38,9 @@ function registerRoutes(
       agent_url: agent.baseUrl,
       channels,
       known_channels: knownChannels,
-      sessions: sessions.count(),
+      session_id: sessions.getSessionId() || null,
+      session_busy: sessions.isBusy(),
+      queue_length: sessions.queueLength(),
       schedules_pending: pending,
       uptime: process.uptime(),
     });

@@ -1,128 +1,98 @@
-// ─────────────────────────────────────────────────────────────
-// Session Store — maps channels to cagent sessions
+// -----------------------------------------------------------------
+// Session Store - single session architecture
 //
-// Each channel (e.g., "telegram:12345") maps to a cagent
-// session ID. The actual conversation history is managed by
-// cagent server-side — we just need to track the mapping.
-//
-// Sessions also have a "busy" flag to prevent concurrent
-// requests to the same cagent session (which would cause one
-// to hang until the other finishes).
-// ─────────────────────────────────────────────────────────────
+// One cagent session shared across all channels (telegram, CLI,
+// heartbeat, schedules). Messages are serialized through a FIFO
+// queue. Session ID is persisted to disk so it survives restarts.
+// -----------------------------------------------------------------
+
+const fs = require("fs");
+const path = require("path");
 
 class SessionStore {
-  constructor() {
-    // channelId -> { sessionId: string, busy: boolean }
-    this.sessions = new Map();
-    // channelId -> { sessionId: string, busy: boolean }  (overflow)
-    this.overflow = new Map();
-    // channelId -> [{ resolve, reject, message }]
-    this.queues = new Map();
+  constructor(persistPath) {
+    this.persistPath = persistPath;
+    this.sessionId = null;
+    this.busy = false;
+    this.queue = []; // [{ resolve, reject, channelId, message, callbacks }]
+
+    this._load();
   }
 
-  /**
-   * Get the cagent session ID for a channel, or null if none exists
-   */
-  getSessionId(channelId) {
-    const entry = this.sessions.get(channelId);
-    return entry ? entry.sessionId : null;
-  }
+  // -- Persistence --------------------------------------------------
 
-  /**
-   * Store a cagent session ID for a channel
-   */
-  setSessionId(channelId, sessionId) {
-    this.sessions.set(channelId, { sessionId, busy: false });
-  }
-
-  /**
-   * Check if a session is currently busy (processing a request)
-   */
-  isBusy(channelId) {
-    const entry = this.sessions.get(channelId);
-    return entry ? entry.busy : false;
-  }
-
-  /**
-   * Mark a session as busy/free
-   */
-  setBusy(channelId, busy) {
-    const entry = this.sessions.get(channelId);
-    if (entry) {
-      entry.busy = busy;
+  _load() {
+    try {
+      if (this.persistPath && fs.existsSync(this.persistPath)) {
+        const raw = fs.readFileSync(this.persistPath, "utf-8");
+        const data = JSON.parse(raw);
+        if (data.sessionId) {
+          this.sessionId = data.sessionId;
+          console.log(`[session] Restored session: ${this.sessionId}`);
+        }
+      }
+    } catch (err) {
+      console.error(`[session] Failed to load persisted session: ${err.message}`);
     }
   }
 
-  /**
-   * Clear a channel's session (forces a new session on next message)
-   */
-  clear(channelId) {
-    this.sessions.delete(channelId);
-    // Don't clear queue — pending messages will get a fresh session
+  _save() {
+    try {
+      if (!this.persistPath) return;
+      const dir = path.dirname(this.persistPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        this.persistPath,
+        JSON.stringify({ sessionId: this.sessionId, updated: new Date().toISOString() }, null, 2) + "\n"
+      );
+    } catch (err) {
+      console.error(`[session] Failed to persist session: ${err.message}`);
+    }
   }
 
-  /**
-   * Get number of active sessions
-   */
-  count() {
-    return this.sessions.size;
+  // -- Session ID ---------------------------------------------------
+
+  getSessionId() {
+    return this.sessionId;
   }
 
-  // ── Overflow sessions ───────────────────────────────────
-  // Used when primary is busy and a new message arrives.
-  // Gives the user a parallel "fresh Moby" to talk to.
-
-  getOverflowSessionId(channelId) {
-    const entry = this.overflow.get(channelId);
-    return entry ? entry.sessionId : null;
+  setSessionId(id) {
+    this.sessionId = id;
+    this._save();
   }
 
-  setOverflowSessionId(channelId, sessionId) {
-    this.overflow.set(channelId, { sessionId, busy: false });
+  clear() {
+    this.sessionId = null;
+    this._save();
   }
 
-  isOverflowBusy(channelId) {
-    const entry = this.overflow.get(channelId);
-    return entry ? entry.busy : false;
+  // -- Busy / queue -------------------------------------------------
+
+  isBusy() {
+    return this.busy;
   }
 
-  setOverflowBusy(channelId, busy) {
-    const entry = this.overflow.get(channelId);
-    if (entry) entry.busy = busy;
+  setBusy(busy) {
+    this.busy = busy;
   }
 
-  clearOverflow(channelId) {
-    this.overflow.delete(channelId);
-  }
-
-  /**
-   * Enqueue a message for a channel. Returns a promise that resolves
-   * when the message has been processed.
-   */
   enqueue(channelId, message, callbacks = {}) {
     return new Promise((resolve, reject) => {
-      if (!this.queues.has(channelId)) {
-        this.queues.set(channelId, []);
-      }
-      this.queues.get(channelId).push({ resolve, reject, message, callbacks });
+      this.queue.push({ resolve, reject, channelId, message, callbacks });
     });
   }
 
-  /**
-   * Dequeue the next pending message for a channel, or null if empty.
-   */
-  dequeue(channelId) {
-    const queue = this.queues.get(channelId);
-    if (!queue || queue.length === 0) return null;
-    return queue.shift();
+  dequeue() {
+    if (this.queue.length === 0) return null;
+    return this.queue.shift();
   }
 
-  /**
-   * Check if there are pending messages for a channel
-   */
-  hasPending(channelId) {
-    const queue = this.queues.get(channelId);
-    return queue && queue.length > 0;
+  hasPending() {
+    return this.queue.length > 0;
+  }
+
+  queueLength() {
+    return this.queue.length;
   }
 }
 
