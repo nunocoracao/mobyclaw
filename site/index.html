@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mobyclaw — Your Personal AI Agent</title>
+  <meta name="description" content="A long-lived personal AI agent that runs in Docker. Always on, always remembering, always ready to help.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐋</text></svg>">
+  <style>
+    /* ─── Reset & Base ─────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0e1a;
+      --bg-card: #111827;
+      --bg-code: #1a2236;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent2: #818cf8;
+      --accent3: #34d399;
+      --gradient: linear-gradient(135deg, #38bdf8, #818cf8);
+      --gradient2: linear-gradient(135deg, #818cf8, #c084fc);
+      --border: #1e293b;
+      --radius: 16px;
+      --max-w: 1100px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      overflow-x: hidden;
+    }
+
+    /* ─── Typography ───────────────────────────────── */
+    h1, h2, h3 { line-height: 1.2; font-weight: 700; }
+
+    h1 {
+      font-size: clamp(2.5rem, 6vw, 4rem);
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    h2 {
+      font-size: clamp(1.8rem, 4vw, 2.5rem);
+      margin-bottom: 1rem;
+    }
+
+    h3 {
+      font-size: 1.25rem;
+      margin-bottom: 0.5rem;
+    }
+
+    p { color: var(--text-muted); max-width: 65ch; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    code, pre {
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.9rem;
+    }
+
+    pre {
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      overflow-x: auto;
+      line-height: 1.5;
+    }
+
+    code {
+      background: var(--bg-code);
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+    }
+
+    pre code { background: none; padding: 0; }
+
+    /* ─── Layout ───────────────────────────────────── */
+    .container {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    section {
+      padding: 6rem 0;
+    }
+
+    /* ─── Nav ──────────────────────────────────────── */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(10, 14, 26, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 0;
+    }
+
+    nav .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-logo {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .nav-links { display: flex; gap: 2rem; list-style: none; }
+    .nav-links a { color: var(--text-muted); font-size: 0.9rem; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+    .nav-github {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      transition: color 0.2s;
+    }
+    .nav-github:hover { color: var(--text); text-decoration: none; }
+    .nav-github svg { width: 20px; height: 20px; fill: currentColor; }
+
+    /* ─── Hero ─────────────────────────────────────── */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      padding-top: 5rem;
+      position: relative;
+    }
+
+    .hero-inner {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+
+    .hero-text .subtitle {
+      font-size: 1.2rem;
+      color: var(--text-muted);
+      margin-top: 1.5rem;
+      max-width: 50ch;
+    }
+
+    .hero-text .cta-row {
+      display: flex;
+      gap: 1rem;
+      margin-top: 2.5rem;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.85rem 2rem;
+      border-radius: 50px;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: all 0.3s;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background: var(--gradient);
+      color: #0a0e1a;
+    }
+    .btn-primary:hover { opacity: 0.9; text-decoration: none; transform: translateY(-2px); }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-secondary:hover { border-color: var(--accent); text-decoration: none; transform: translateY(-2px); }
+
+    .hero-visual {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .hero-visual svg {
+      width: 100%;
+      max-width: 460px;
+      height: auto;
+    }
+
+    /* ─── Glow background ──────────────────────────── */
+    .glow {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.15;
+      pointer-events: none;
+    }
+
+    .glow-1 { width: 500px; height: 500px; background: var(--accent); top: -100px; left: -200px; }
+    .glow-2 { width: 400px; height: 400px; background: var(--accent2); bottom: -100px; right: -100px; }
+
+    /* ─── Features Grid ────────────────────────────── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem;
+      transition: border-color 0.3s, transform 0.3s;
+    }
+
+    .feature-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-4px);
+    }
+
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 1rem;
+    }
+
+    .feature-card h3 { color: var(--text); }
+    .feature-card p { font-size: 0.95rem; }
+
+    /* ─── How It Works ─────────────────────────────── */
+    .how-it-works-diagram {
+      margin-top: 3rem;
+      display: flex;
+      justify-content: center;
+    }
+
+    .how-it-works-diagram svg {
+      width: 100%;
+      max-width: 800px;
+      height: auto;
+    }
+
+    /* ─── Install Steps ────────────────────────────── */
+    .steps {
+      display: grid;
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+
+    .step-number {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: var(--bg);
+      flex-shrink: 0;
+    }
+
+    .step-content h3 { color: var(--text); margin-bottom: 0.5rem; }
+    .step-content pre { margin-top: 0.75rem; }
+
+    /* ─── Config Section ───────────────────────────── */
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+
+    .config-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem;
+    }
+
+    .config-card h3 {
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .config-card pre { margin-top: 1rem; font-size: 0.85rem; }
+
+    /* ─── Footer ───────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 3rem 0;
+      text-align: center;
+    }
+
+    footer p { margin: 0 auto; font-size: 0.9rem; }
+
+    /* ─── Responsive ───────────────────────────────── */
+    @media (max-width: 768px) {
+      .hero-inner { grid-template-columns: 1fr; text-align: center; }
+      .hero-text .subtitle { margin: 1.5rem auto 0; }
+      .hero-text .cta-row { justify-content: center; }
+      .hero-visual { order: -1; }
+      .hero-visual svg { max-width: 300px; }
+      .nav-links { display: none; }
+      section { padding: 4rem 0; }
+      .step { grid-template-columns: 1fr; text-align: center; }
+      .step-number { margin: 0 auto; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── Nav ────────────────────────────────────────── -->
+<nav>
+  <div class="container">
+    <a href="#" class="nav-logo">🐋 mobyclaw</a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#how-it-works">How It Works</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#configure">Configure</a></li>
+    </ul>
+    <a href="https://github.com/nunocoracao/mobyclaw" class="nav-github">
+      <svg viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<!-- ─── Hero ───────────────────────────────────────── -->
+<section class="hero">
+  <div class="glow glow-1"></div>
+  <div class="glow glow-2"></div>
+  <div class="container">
+    <div class="hero-inner">
+      <div class="hero-text">
+        <h1>Your Personal AI Agent</h1>
+        <p class="subtitle">
+          A long-lived AI agent that runs in Docker on your machine.
+          Always on, always remembering, always ready to help.
+          Chat via Telegram, get proactive reminders, and let it
+          work on your projects — all with persistent memory.
+        </p>
+        <div class="cta-row">
+          <a href="#install" class="btn btn-primary">Get Started →</a>
+          <a href="https://github.com/nunocoracao/mobyclaw" class="btn btn-secondary">View on GitHub</a>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <!-- Hero SVG: Whale + Docker container illustration -->
+        <svg viewBox="0 0 460 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Background circles -->
+          <circle cx="230" cy="200" r="180" fill="url(#heroGrad1)" opacity="0.08"/>
+          <circle cx="230" cy="200" r="130" fill="url(#heroGrad2)" opacity="0.06"/>
+
+          <!-- Container/Docker shape -->
+          <rect x="115" y="140" width="230" height="150" rx="16" fill="#111827" stroke="#1e293b" stroke-width="2"/>
+          <rect x="115" y="140" width="230" height="36" rx="16" fill="url(#heroGrad3)" opacity="0.15"/>
+          <rect x="115" y="160" width="230" height="16" fill="#111827"/>
+
+          <!-- Container dots -->
+          <circle cx="140" cy="158" r="5" fill="#ef4444" opacity="0.8"/>
+          <circle cx="158" cy="158" r="5" fill="#eab308" opacity="0.8"/>
+          <circle cx="176" cy="158" r="5" fill="#22c55e" opacity="0.8"/>
+
+          <!-- Terminal lines -->
+          <text x="130" y="202" font-family="monospace" font-size="13" fill="#38bdf8" opacity="0.9">$ mobyclaw up</text>
+          <text x="130" y="222" font-family="monospace" font-size="13" fill="#34d399" opacity="0.7">✓ Moby is ready!</text>
+          <text x="130" y="248" font-family="monospace" font-size="13" fill="#94a3b8" opacity="0.5">🐋 Listening on Telegram...</text>
+          <text x="130" y="268" font-family="monospace" font-size="13" fill="#94a3b8" opacity="0.5">💓 Heartbeat: every 15m</text>
+
+          <!-- Whale emoji/icon above -->
+          <text x="195" y="120" font-size="56" opacity="0.9">🐋</text>
+
+          <!-- Connection lines -->
+          <line x1="230" y1="290" x2="150" y2="340" stroke="#38bdf8" stroke-width="1.5" opacity="0.3" stroke-dasharray="4 4"/>
+          <line x1="230" y1="290" x2="230" y2="345" stroke="#818cf8" stroke-width="1.5" opacity="0.3" stroke-dasharray="4 4"/>
+          <line x1="230" y1="290" x2="310" y2="340" stroke="#34d399" stroke-width="1.5" opacity="0.3" stroke-dasharray="4 4"/>
+
+          <!-- Service bubbles -->
+          <rect x="110" y="340" width="80" height="30" rx="15" fill="#111827" stroke="#38bdf8" stroke-width="1" opacity="0.6"/>
+          <text x="125" y="360" font-family="sans-serif" font-size="11" fill="#38bdf8" opacity="0.8">Telegram</text>
+
+          <rect x="190" y="345" width="80" height="30" rx="15" fill="#111827" stroke="#818cf8" stroke-width="1" opacity="0.6"/>
+          <text x="207" y="365" font-family="sans-serif" font-size="11" fill="#818cf8" opacity="0.8">Memory</text>
+
+          <rect x="270" y="340" width="80" height="30" rx="15" fill="#111827" stroke="#34d399" stroke-width="1" opacity="0.6"/>
+          <text x="278" y="360" font-family="sans-serif" font-size="11" fill="#34d399" opacity="0.8">Scheduler</text>
+
+          <!-- Floating particles -->
+          <circle cx="80" cy="160" r="3" fill="#38bdf8" opacity="0.3">
+            <animate attributeName="cy" values="160;140;160" dur="3s" repeatCount="indefinite"/>
+          </circle>
+          <circle cx="380" cy="180" r="2" fill="#818cf8" opacity="0.3">
+            <animate attributeName="cy" values="180;200;180" dur="4s" repeatCount="indefinite"/>
+          </circle>
+          <circle cx="100" cy="280" r="2.5" fill="#34d399" opacity="0.3">
+            <animate attributeName="cy" values="280;260;280" dur="3.5s" repeatCount="indefinite"/>
+          </circle>
+          <circle cx="370" cy="260" r="2" fill="#38bdf8" opacity="0.2">
+            <animate attributeName="cy" values="260;280;260" dur="2.5s" repeatCount="indefinite"/>
+          </circle>
+
+          <defs>
+            <linearGradient id="heroGrad1" x1="50" y1="20" x2="410" y2="380">
+              <stop offset="0%" stop-color="#38bdf8"/>
+              <stop offset="100%" stop-color="#818cf8"/>
+            </linearGradient>
+            <linearGradient id="heroGrad2" x1="100" y1="70" x2="360" y2="330">
+              <stop offset="0%" stop-color="#818cf8"/>
+              <stop offset="100%" stop-color="#c084fc"/>
+            </linearGradient>
+            <linearGradient id="heroGrad3" x1="115" y1="140" x2="345" y2="176">
+              <stop offset="0%" stop-color="#38bdf8"/>
+              <stop offset="100%" stop-color="#818cf8"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Features ───────────────────────────────────── -->
+<section id="features">
+  <div class="container">
+    <h2>Why Mobyclaw?</h2>
+    <p>A personal AI agent that goes beyond chat. It lives on your machine, remembers everything, and takes action.</p>
+    <div class="features-grid">
+
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 48 48" fill="none">
+          <rect x="4" y="4" width="40" height="40" rx="12" fill="#38bdf8" opacity="0.12"/>
+          <path d="M16 20h16M16 28h10" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="34" cy="14" r="6" fill="#38bdf8" opacity="0.3"/>
+          <path d="M32 14l2 2 4-4" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h3>Persistent Memory</h3>
+        <p>Remembers your name, preferences, projects, and past conversations. Memory lives in plain Markdown files you can read and edit.</p>
+      </div>
+
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 48 48" fill="none">
+          <rect x="4" y="4" width="40" height="40" rx="12" fill="#818cf8" opacity="0.12"/>
+          <path d="M14 34V20l10-6 10 6v14l-10 6-10-6z" stroke="#818cf8" stroke-width="2.5" stroke-linejoin="round"/>
+          <path d="M24 28v12M14 20l10 8 10-8" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h3>Runs in Docker</h3>
+        <p>One <code>docker compose up</code> and you have a personal AI. Isolated, reproducible, portable. Your data stays on your machine.</p>
+      </div>
+
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 48 48" fill="none">
+          <rect x="4" y="4" width="40" height="40" rx="12" fill="#34d399" opacity="0.12"/>
+          <circle cx="24" cy="18" r="8" stroke="#34d399" stroke-width="2.5"/>
+          <path d="M15 36c0-5 4-9 9-9s9 4 9 9" stroke="#34d399" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M32 16l4-4M36 16l-4-4" stroke="#34d399" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <h3>Chat via Telegram</h3>
+        <p>Message your agent from Telegram. Get streaming responses with real-time tool status. Discord and Slack support coming soon.</p>
+      </div>
+
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 48 48" fill="none">
+          <rect x="4" y="4" width="40" height="40" rx="12" fill="#f472b6" opacity="0.12"/>
+          <circle cx="24" cy="24" r="10" stroke="#f472b6" stroke-width="2.5"/>
+          <path d="M24 18v6l4 4" stroke="#f472b6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 12l2 2M36 12l-2 2" stroke="#f472b6" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <h3>Proactive &amp; Scheduled</h3>
+        <p>Set reminders, schedule recurring tasks, and get a heartbeat that wakes the agent periodically to check on things.</p>
+      </div>
+
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 48 48" fill="none">
+          <rect x="4" y="4" width="40" height="40" rx="12" fill="#fb923c" opacity="0.12"/>
+          <path d="M16 16h16v16H16z" stroke="#fb923c" stroke-width="2.5" stroke-linejoin="round"/>
+          <path d="M22 16V10h4v6M16 24h16" stroke="#fb923c" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M24 24v8" stroke="#fb923c" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+        <h3>Workspace Access</h3>
+        <p>Mount your project folders. The agent reads, edits, and creates files in your actual codebase. Changes are instant and bidirectional.</p>
+      </div>
+
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 48 48" fill="none">
+          <rect x="4" y="4" width="40" height="40" rx="12" fill="#a78bfa" opacity="0.12"/>
+          <path d="M24 14v20M18 20l6-6 6 6" stroke="#a78bfa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="24" cy="38" r="3" fill="#a78bfa" opacity="0.5"/>
+          <path d="M14 32c0 0 4 6 10 6s10-6 10-6" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+        </svg>
+        <h3>Self-Improving</h3>
+        <p>Moby can modify its own configuration, personality, and even source code. It evolves based on your needs and feedback.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ─── How It Works ───────────────────────────────── -->
+<section id="how-it-works" style="background: linear-gradient(180deg, transparent, rgba(56, 189, 248, 0.03), transparent);">
+  <div class="container">
+    <h2>How It Works</h2>
+    <p>Two Docker containers working together — a gateway that handles messaging, and an AI brain powered by cagent.</p>
+    <div class="how-it-works-diagram">
+      <svg viewBox="0 0 800 380" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Background -->
+        <rect x="20" y="20" width="760" height="340" rx="20" fill="#111827" stroke="#1e293b" stroke-width="1.5" opacity="0.5"/>
+        <text x="50" y="52" font-family="sans-serif" font-size="13" fill="#94a3b8" opacity="0.6">Docker Compose Stack</text>
+
+        <!-- Gateway box -->
+        <rect x="60" y="80" width="300" height="240" rx="14" fill="#0f172a" stroke="#38bdf8" stroke-width="1.5" opacity="0.8"/>
+        <rect x="60" y="80" width="300" height="36" rx="14" fill="#38bdf8" opacity="0.08"/>
+        <rect x="60" y="102" width="300" height="14" fill="#0f172a"/>
+        <text x="80" y="104" font-family="monospace" font-size="14" fill="#38bdf8" font-weight="bold">gateway</text>
+        <text x="250" y="104" font-family="monospace" font-size="11" fill="#94a3b8">:3000</text>
+
+        <!-- Gateway modules -->
+        <rect x="80" y="130" width="120" height="34" rx="8" fill="#38bdf8" opacity="0.08" stroke="#38bdf8" stroke-width="1" opacity="0.3"/>
+        <text x="95" y="152" font-family="sans-serif" font-size="12" fill="#38bdf8">🔌 Adapters</text>
+
+        <rect x="220" y="130" width="120" height="34" rx="8" fill="#818cf8" opacity="0.08" stroke="#818cf8" stroke-width="1" opacity="0.3"/>
+        <text x="232" y="152" font-family="sans-serif" font-size="12" fill="#818cf8">📡 Sessions</text>
+
+        <rect x="80" y="178" width="120" height="34" rx="8" fill="#34d399" opacity="0.08" stroke="#34d399" stroke-width="1" opacity="0.3"/>
+        <text x="92" y="200" font-family="sans-serif" font-size="12" fill="#34d399">⏰ Scheduler</text>
+
+        <rect x="220" y="178" width="120" height="34" rx="8" fill="#f472b6" opacity="0.08" stroke="#f472b6" stroke-width="1" opacity="0.3"/>
+        <text x="232" y="200" font-family="sans-serif" font-size="12" fill="#f472b6">💓 Heartbeat</text>
+
+        <rect x="80" y="226" width="120" height="34" rx="8" fill="#fb923c" opacity="0.08" stroke="#fb923c" stroke-width="1" opacity="0.3"/>
+        <text x="95" y="248" font-family="sans-serif" font-size="12" fill="#fb923c">📬 Delivery</text>
+
+        <rect x="220" y="226" width="120" height="34" rx="8" fill="#a78bfa" opacity="0.08" stroke="#a78bfa" stroke-width="1" opacity="0.3"/>
+        <text x="235" y="248" font-family="sans-serif" font-size="12" fill="#a78bfa">🔀 Routes</text>
+
+        <!-- Arrow gateway → moby -->
+        <line x1="360" y1="200" x2="430" y2="200" stroke="#38bdf8" stroke-width="2" opacity="0.5"/>
+        <polygon points="430,195 440,200 430,205" fill="#38bdf8" opacity="0.5"/>
+        <text x="370" y="190" font-family="sans-serif" font-size="10" fill="#94a3b8">HTTP+SSE</text>
+
+        <!-- Moby box -->
+        <rect x="440" y="80" width="300" height="240" rx="14" fill="#0f172a" stroke="#818cf8" stroke-width="1.5" opacity="0.8"/>
+        <rect x="440" y="80" width="300" height="36" rx="14" fill="#818cf8" opacity="0.08"/>
+        <rect x="440" y="102" width="300" height="14" fill="#0f172a"/>
+        <text x="460" y="104" font-family="monospace" font-size="14" fill="#818cf8" font-weight="bold">moby</text>
+        <text x="630" y="104" font-family="monospace" font-size="11" fill="#94a3b8">:8080</text>
+
+        <!-- Moby internals -->
+        <text x="470" y="145" font-family="monospace" font-size="12" fill="#94a3b8">cagent serve api</text>
+
+        <rect x="460" y="160" width="260" height="44" rx="8" fill="#818cf8" opacity="0.05" stroke="#818cf8" stroke-width="1" opacity="0.2"/>
+        <text x="475" y="178" font-family="sans-serif" font-size="11" fill="#e2e8f0" opacity="0.7">🧠 LLM (Anthropic / OpenAI)</text>
+        <text x="475" y="196" font-family="sans-serif" font-size="11" fill="#94a3b8">Model inference + reasoning</text>
+
+        <rect x="460" y="216" width="125" height="34" rx="8" fill="#34d399" opacity="0.08" stroke="#34d399" stroke-width="1" opacity="0.3"/>
+        <text x="474" y="238" font-family="sans-serif" font-size="11" fill="#34d399">🔧 Shell</text>
+
+        <rect x="595" y="216" width="125" height="34" rx="8" fill="#fb923c" opacity="0.08" stroke="#fb923c" stroke-width="1" opacity="0.3"/>
+        <text x="610" y="238" font-family="sans-serif" font-size="11" fill="#fb923c">📁 Filesystem</text>
+
+        <rect x="460" y="262" width="125" height="34" rx="8" fill="#38bdf8" opacity="0.08" stroke="#38bdf8" stroke-width="1" opacity="0.3"/>
+        <text x="474" y="284" font-family="sans-serif" font-size="11" fill="#38bdf8">🌐 Fetch</text>
+
+        <rect x="595" y="262" width="125" height="34" rx="8" fill="#a78bfa" opacity="0.08" stroke="#a78bfa" stroke-width="1" opacity="0.3"/>
+        <text x="610" y="284" font-family="sans-serif" font-size="11" fill="#a78bfa">💭 Think</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Install ────────────────────────────────────── -->
+<section id="install">
+  <div class="container">
+    <h2>Get Started in 3 Steps</h2>
+    <p>From zero to a running personal AI in under 2 minutes.</p>
+    <div class="steps">
+
+      <div class="step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <h3>Clone the repo</h3>
+          <pre><code>git clone https://github.com/nunocoracao/mobyclaw.git
+cd mobyclaw</code></pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <h3>Run the setup</h3>
+          <p>Interactive wizard walks you through API keys, messaging, and workspaces.</p>
+          <pre><code>./mobyclaw init</code></pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <h3>Start Moby</h3>
+          <p>That's it. Moby is running, listening, and ready to chat.</p>
+          <pre><code>./mobyclaw up
+
+# Chat from the terminal
+./mobyclaw chat
+
+# Or send a one-shot prompt
+./mobyclaw run "Hello, who are you?"</code></pre>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ─── Configure ──────────────────────────────────── -->
+<section id="configure" style="background: linear-gradient(180deg, transparent, rgba(129, 140, 248, 0.03), transparent);">
+  <div class="container">
+    <h2>Configure Everything</h2>
+    <p>All configuration lives in simple files. Edit with any text editor — Moby picks up changes automatically.</p>
+    <div class="config-grid">
+
+      <div class="config-card">
+        <h3>🔑 API Keys</h3>
+        <p>Set your LLM provider key in <code>.env</code>. Anthropic or OpenAI — your choice.</p>
+        <pre><code># .env
+ANTHROPIC_API_KEY=sk-ant-...
+# or
+OPENAI_API_KEY=sk-...</code></pre>
+      </div>
+
+      <div class="config-card">
+        <h3>💬 Telegram</h3>
+        <p>Create a bot with <a href="https://t.me/BotFather">@BotFather</a>, add the token.</p>
+        <pre><code># .env
+TELEGRAM_BOT_TOKEN=123:ABC...</code></pre>
+      </div>
+
+      <div class="config-card">
+        <h3>🧠 Personality</h3>
+        <p>Edit <code>~/.mobyclaw/soul.yaml</code> to customize Moby's personality, model, and behavior.</p>
+        <pre><code># ~/.mobyclaw/soul.yaml
+agents:
+  root:
+    name: moby
+    model: sonnet
+    instruction: |
+      You are a helpful agent...</code></pre>
+      </div>
+
+      <div class="config-card">
+        <h3>📁 Workspaces</h3>
+        <p>Mount your project folders so Moby can work on your code.</p>
+        <pre><code># Add a workspace
+./mobyclaw workspace add ~/projects/myapp
+
+# Moby sees it at /workspace/myapp</code></pre>
+      </div>
+
+      <div class="config-card">
+        <h3>🔐 Credentials</h3>
+        <p>Give Moby access to GitHub, AWS, and other services.</p>
+        <pre><code># ~/.mobyclaw/credentials.env
+GH_TOKEN=ghp_...
+AWS_ACCESS_KEY_ID=AKIA...</code></pre>
+      </div>
+
+      <div class="config-card">
+        <h3>💓 Heartbeat</h3>
+        <p>Configure how often Moby wakes up to check on things.</p>
+        <pre><code># .env
+MOBYCLAW_HEARTBEAT_INTERVAL=15m
+MOBYCLAW_ACTIVE_HOURS=07:00-23:00</code></pre>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ─── CLI Reference ──────────────────────────────── -->
+<section id="cli">
+  <div class="container">
+    <h2>CLI Reference</h2>
+    <p>The <code>mobyclaw</code> CLI wraps Docker Compose with agent-aware commands.</p>
+    <pre><code>./mobyclaw init                    # Interactive setup wizard
+./mobyclaw up                      # Start Moby (auto-inits if needed)
+./mobyclaw down                    # Stop everything
+./mobyclaw chat                    # Interactive chat session
+./mobyclaw run "your prompt"       # One-shot prompt
+./mobyclaw logs                    # Tail container logs
+./mobyclaw logs gateway            # Gateway logs only
+./mobyclaw status                  # Show services, channels, health
+./mobyclaw exec                    # Shell into the agent container
+./mobyclaw workspace list          # Show mounted workspaces
+./mobyclaw workspace add &lt;path&gt;    # Mount a project folder
+./mobyclaw workspace remove &lt;name&gt; # Unmount a folder</code></pre>
+  </div>
+</section>
+
+<!-- ─── Footer ─────────────────────────────────────── -->
+<footer>
+  <div class="container">
+    <p>
+      🐋 <strong>mobyclaw</strong> — an open-source personal AI agent.
+      <br>
+      Built with <a href="https://github.com/nunocoracao/mobyclaw">love and Docker</a>.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
