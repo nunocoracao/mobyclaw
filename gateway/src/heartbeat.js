@@ -48,6 +48,9 @@ function startHeartbeat(sendPromptFn, channelStore, options = {}) {
   const activeHours = parseActiveHours(activeHoursStr);
   const session = options.session || null;
   let running = false;
+  let consecutiveFailures = 0;
+  let lastKnownSessionId = session ? session.getSessionId() : null;
+  const MAX_HEARTBEAT_FAILURES = 2;
 
   console.log(
     `[heartbeat] Interval: ${intervalMs / 1000}s, active hours: ${activeHoursStr}`
@@ -59,6 +62,20 @@ function startHeartbeat(sendPromptFn, channelStore, options = {}) {
     if (running) {
       console.log(`[heartbeat] Skipped — previous heartbeat still running`);
       return;
+    }
+
+    // Skip if too many consecutive failures (session likely corrupted).
+    // Auto-resets when the session changes (user /new or auto-recovery).
+    if (consecutiveFailures >= MAX_HEARTBEAT_FAILURES) {
+      const currentSessionId = session ? session.getSessionId() : null;
+      if (currentSessionId && currentSessionId !== lastKnownSessionId) {
+        // Session changed — give it another chance
+        consecutiveFailures = 0;
+        lastKnownSessionId = currentSessionId;
+        console.log(`[heartbeat] Session changed — resuming heartbeats`);
+      } else {
+        return; // still same broken session, skip silently
+      }
     }
 
     // Skip if a user request is active or queued — heartbeat is low priority
@@ -110,8 +127,13 @@ function startHeartbeat(sendPromptFn, channelStore, options = {}) {
           `[heartbeat] Agent response: ${(response || "").slice(0, 200)}`
         );
       }
+      consecutiveFailures = 0; // reset on success
     } catch (err) {
-      console.error(`[heartbeat] Error: ${err.message}`);
+      consecutiveFailures++;
+      console.error(`[heartbeat] Error (${consecutiveFailures}/${MAX_HEARTBEAT_FAILURES}): ${err.message.slice(0, 150)}`);
+      if (consecutiveFailures >= MAX_HEARTBEAT_FAILURES) {
+        console.error(`[heartbeat] Too many failures — pausing heartbeats until session resets`);
+      }
     } finally {
       running = false;
     }

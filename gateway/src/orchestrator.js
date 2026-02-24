@@ -27,7 +27,15 @@ function isSessionError(err) {
     msg.includes("context canceled") ||
     msg.includes("aborted") ||
     msg.includes("timed out") ||
-    msg.includes("econnreset")
+    msg.includes("econnreset") ||
+    // Corrupted session — tool_use/tool_result out of sync
+    msg.includes("sequencing") ||
+    msg.includes("tool_use_id") ||
+    msg.includes("invalid_request_error") ||
+    msg.includes("all models failed") ||
+    // Socket-level failures
+    msg.includes("socket idle") ||
+    msg.includes("connection likely dead")
   );
 }
 
@@ -78,7 +86,8 @@ async function processMessageStream(
     console.error(`[${channelId}] Agent error: ${err.message}`);
 
     if (isSessionError(err)) {
-      console.log(`[${channelId}] Session error - resetting and retrying...`);
+      console.log(`[${channelId}] Session error detected — clearing and retrying`);
+      console.log(`[${channelId}]   Error: ${err.message.slice(0, 200)}`);
       session.clear();
 
       try {

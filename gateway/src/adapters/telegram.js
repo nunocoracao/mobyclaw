@@ -165,10 +165,8 @@ async function setupTelegram(agent, sessions, sendToAgentStream, { stopCurrentRu
   // or if Telegram has a phantom webhook, long-polling won't receive updates.
   await bot.telegram.deleteWebhook({ drop_pending_updates: false });
 
-  // Launch long-polling with error handling.
-  // bot.launch() is fire-and-forget — if the polling loop crashes
-  // silently (409 conflict, network error), we never find out.
-  // The onError callback ensures we log and know about it.
+  // Launch long-polling. Await the launch to catch initial errors.
+  // Use allowedUpdates to reduce unnecessary traffic.
   bot.launch({
     dropPendingUpdates: false,
     allowedUpdates: ["message", "callback_query"],
@@ -176,60 +174,40 @@ async function setupTelegram(agent, sessions, sendToAgentStream, { stopCurrentRu
     console.error(`[telegram] bot.launch() FATAL:`, err.message);
   });
 
-  // Telegraf emits 'error' on polling failures — log them
-  bot.on("error", (err) => {
-    console.error(`[telegram] Polling error:`, err.message);
-  });
-
   process.once("SIGINT", () => bot.stop("SIGINT"));
   process.once("SIGTERM", () => bot.stop("SIGTERM"));
 
-  // Telegraf polling health monitor.
-  // Telegraf can silently stop polling (409 conflict, network reset, etc.)
-  // with zero indication. We track last activity and restart if idle too long.
+  // Telegraf polling liveness monitor.
+  // Telegraf can silently stop polling (network reset, etc.) with zero
+  // indication. We track activity and restart if idle too long.
+  // Conservative threshold: 5 minutes. Checks every 60s.
   let lastTelegrafActivity = Date.now();
-  const POLL_DEAD_THRESHOLD = 120_000; // consider dead after 2min no activity
-  const POLL_CHECK_INTERVAL = 30_000;  // check every 30s
+  const POLL_DEAD_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+  const POLL_CHECK_INTERVAL = 60_000;         // check every 60s
 
-  // Patch: intercept Telegraf's update processing to track liveness
+  // Intercept update processing to track liveness
   const origHandleUpdate = bot.handleUpdate.bind(bot);
   bot.handleUpdate = (...args) => {
     lastTelegrafActivity = Date.now();
     return origHandleUpdate(...args);
   };
 
-  // Also count successful getMe as activity (proves API connection)
-  const pingTelegraf = async () => {
-    try {
-      await bot.telegram.getMe();
-      lastTelegrafActivity = Date.now();
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
   setInterval(async () => {
     const idleMs = Date.now() - lastTelegrafActivity;
-
-    // If recent activity, polling is alive
     if (idleMs < POLL_DEAD_THRESHOLD) return;
 
-    // Idle for a while — ping Telegram API to check connectivity
-    const apiOk = await pingTelegraf();
-    if (!apiOk) {
-      console.error(`[telegram] ⚠️ Telegram API unreachable`);
-      return; // network issue, not a polling issue
+    // Idle for 5+ minutes. Could be legitimately quiet. Check if Telegram
+    // API is reachable — if so, restart polling just in case.
+    try {
+      await bot.telegram.getMe();
+    } catch {
+      // API unreachable — network issue, not polling issue
+      return;
     }
 
-    // API works but we haven't processed any updates — could be
-    // legitimately quiet OR polling could be dead. Do a safe restart:
-    // stop the bot gracefully, wait, then relaunch.
-    console.error(`[telegram] ⚠️ No activity for ${Math.round(idleMs/1000)}s — restarting polling`);
-    try {
-      bot.stop();
-    } catch {}
-    await new Promise(r => setTimeout(r, 2000));
+    console.log(`[telegram] No activity for ${Math.round(idleMs/1000)}s — restarting polling`);
+    try { bot.stop(); } catch {}
+    await new Promise(r => setTimeout(r, 3000));
     await bot.telegram.deleteWebhook({ drop_pending_updates: false });
     bot.launch({
       dropPendingUpdates: false,
@@ -238,7 +216,7 @@ async function setupTelegram(agent, sessions, sendToAgentStream, { stopCurrentRu
       console.error(`[telegram] Restart failed:`, err.message);
     });
     lastTelegrafActivity = Date.now();
-    console.log(`[telegram] ✅ Polling restarted`);
+    console.log(`[telegram] Polling restarted`);
   }, POLL_CHECK_INTERVAL);
 
   // Return a proactive send function for the adapter registry

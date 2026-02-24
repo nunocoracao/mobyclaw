@@ -36,6 +36,8 @@ class SessionStore {
     // Session lifecycle
     this.dailyResetHour = config.dailyResetHour ?? 4; // 4 AM
     this.idleResetMinutes = config.idleResetMinutes ?? null; // null = disabled
+    this.maxTurns = config.maxTurns ?? 80; // auto-rotate after N exchanges
+    this.turnCount = 0;
     this.lastResetAt = null; // ISO timestamp
 
     // Abort support
@@ -99,12 +101,14 @@ class SessionStore {
 
   clear() {
     this.sessionId = null;
+    this.turnCount = 0;
     this.lastResetAt = new Date().toISOString();
     this._save();
   }
 
   touchActivity() {
     this.lastActivity = new Date().toISOString();
+    this.turnCount++;
     this._save();
   }
 
@@ -116,6 +120,12 @@ class SessionStore {
    */
   shouldReset() {
     if (!this.sessionId) return false;
+
+    // Turn limit — prevent sessions from growing too large
+    if (this.maxTurns && this.turnCount >= this.maxTurns) {
+      console.log(`[session] Turn limit reset (${this.turnCount}/${this.maxTurns} turns)`);
+      return true;
+    }
 
     // Daily reset check
     if (this.dailyResetHour !== null) {

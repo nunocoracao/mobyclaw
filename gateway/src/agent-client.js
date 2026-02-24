@@ -162,6 +162,7 @@ class AgentClient {
         let result = "";
         let buffer = "";
         let currentToolName = null;
+        let streamError = null;  // Track errors from SSE events
 
         res.setEncoding("utf8");
 
@@ -223,12 +224,12 @@ class AgentClient {
                   break;
                 }
 
-                case "error":
-                  if (onError)
-                    onError(
-                      event.message || event.error || JSON.stringify(event)
-                    );
+                case "error": {
+                  const errMsg = event.message || event.error || JSON.stringify(event);
+                  streamError = errMsg;
+                  if (onError) onError(errMsg);
                   break;
+                }
               }
             } catch {
               // skip malformed
@@ -248,6 +249,12 @@ class AgentClient {
             } catch {
               /* skip */
             }
+          }
+          // If we received a stream error and got no actual content,
+          // reject so the orchestrator can handle recovery
+          if (streamError && !result.trim()) {
+            reject(new Error(`Stream error: ${streamError}`));
+            return;
           }
           resolve(result.trim());
         });
