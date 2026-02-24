@@ -64,8 +64,9 @@ volumes. This makes it visible, editable, and portable.
 ├── HEARTBEAT.md         # Heartbeat checklist
 ├── schedules.json       # Scheduled reminders (gateway-managed)
 ├── channels.json        # Known messaging channels (gateway-managed)
-├── credentials.env      # Service credentials (GH_TOKEN, AWS keys, etc.)
+├── credentials.env      # Service credentials (AWS, NPM, etc.)
 ├── workspaces.conf      # Workspace folder mappings (name=path)
+├── gh/                  # GitHub CLI OAuth config (persisted)
 ├── memory/              # Daily logs
 │   ├── 2026-02-23.md
 │   ├── 2026-02-22.md
@@ -110,6 +111,8 @@ on the user's behalf. They are **environment variables injected into the agent
 container** at runtime.
 
 - **Configured in** `~/.mobyclaw/credentials.env` (standard `KEY=value` format)
+- **GitHub** uses OAuth device flow (`gh auth login`) - no token in credentials.env.
+  The OAuth session is persisted at `~/.mobyclaw/gh/` via a volume mount.
 - **Injected via** `docker-compose.override.yml` `env_file` directive
 - **Managed via** `mobyclaw init` (interactive) or direct file editing
 - **Never exposed** — the agent's instructions prohibit displaying credential values

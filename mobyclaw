@@ -568,16 +568,11 @@ cmd_init() {
 
     if confirm "Set up GitHub?" "n"; then
         echo ""
-        dim "  Personal access token for the gh CLI."
-        dim "  Create one at: https://github.com/settings/tokens"
+        dim "  GitHub uses OAuth device flow (no token needed)."
+        dim "  After setup, run: mobyclaw run \"authenticate with GitHub\""
+        dim "  Moby will walk you through \"gh auth login\" interactively."
         echo ""
-        ask_secret "GitHub token (ghp_...)"
-        if [[ -n "$REPLY" ]]; then
-            cred_lines+=("GH_TOKEN=$REPLY")
-            success "GitHub configured (GH_TOKEN)"
-        else
-            warn "Skipped"
-        fi
+        success "GitHub will be configured via 'gh auth login' after first start"
     else
         dim "  GitHub skipped"
     fi

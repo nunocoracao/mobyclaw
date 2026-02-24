@@ -68,7 +68,8 @@ default `agents/moby/soul.yaml` to `~/.mobyclaw/soul.yaml` as a starting point.
 ├── HEARTBEAT.md        # Heartbeat checklist
 ├── schedules.json      # Scheduled reminders (gateway-managed)
 ├── channels.json       # Known messaging channels (gateway-managed)
-├── credentials.env     # Service credentials (GH_TOKEN, etc.)
+├── credentials.env     # Service credentials (AWS, NPM, etc.)
+├── gh/                 # GitHub CLI OAuth config (persisted)
 ├── workspaces.conf     # Workspace folder mappings
 ├── memory/
 │   ├── 2026-02-23.md   # Daily log

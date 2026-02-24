@@ -30,7 +30,7 @@ action on your behalf.
 - **Scheduling & reminders** - set reminders, recurring tasks, and timed notifications
 - **Proactive heartbeat** - wakes itself up periodically to check on tasks and notify you
 - **Workspace access** - mount your project folders so the agent can read and edit your actual code
-- **Service credentials** - give it your GitHub token, AWS keys, etc. and it uses CLIs on your behalf
+- **Service credentials** - authenticate GitHub via OAuth, add AWS keys, etc. and it uses CLIs on your behalf
 - **Self-modifying** - can edit its own config, personality, and even source code, then trigger rebuilds
 - **Auto-backup** - scheduled backups of agent state to a private GitHub repo
 - **Your machine, your data** - runs locally, no SaaS, your API keys
@@ -133,18 +133,27 @@ Give your agent access to CLIs like `gh`, `aws`, etc.:
 
 ```bash
 # During setup:
-./mobyclaw init    # prompts for GitHub, AWS, custom credentials
+./mobyclaw init    # prompts for AWS, custom credentials
 
 # Or edit directly:
 vim ~/.mobyclaw/credentials.env
 ```
 
-Format is standard `KEY=value`:
+**GitHub** uses OAuth device flow - no token needed:
+```bash
+# After starting, just ask Moby to authenticate:
+mobyclaw run "authenticate with GitHub"
+# Moby runs `gh auth login` and gives you a code + URL to open in your browser
+```
+
+The `gh` OAuth session is persisted at `~/.mobyclaw/gh/` and survives restarts.
+
+**Other credentials** use standard `KEY=value` format in `credentials.env`:
 
 ```
-GH_TOKEN=ghp_xxxxxxxxxxxx
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...
+NPM_TOKEN=npm_...
 ```
 
 Credentials are injected as environment variables into the agent container.
@@ -172,7 +181,8 @@ Everything lives in two places:
 | `MEMORY.md` | Long-term curated memory |
 | `TASKS.md` | Task and reminder list |
 | `HEARTBEAT.md` | Heartbeat checklist |
-| `credentials.env` | Service credentials (GH_TOKEN, AWS, etc.) |
+| `credentials.env` | Service credentials (AWS, NPM, etc.) |
+| `gh/` | GitHub CLI OAuth config (persisted across restarts) |
 | `workspaces.conf` | Workspace folder mappings |
 | `memory/` | Daily logs (YYYY-MM-DD.md) |
 | `sessions/` | Session persistence |

@@ -64,7 +64,8 @@ volumes. This makes it visible, editable, and portable.
 ├── HEARTBEAT.md         # Heartbeat checklist
 ├── schedules.json       # Scheduled reminders (gateway-managed)
 ├── channels.json        # Known messaging channels (gateway-managed)
-├── credentials.env      # Service credentials (GH_TOKEN, AWS keys, etc.)
+├── credentials.env      # Service credentials (AWS, NPM, etc.)
+├── gh/                  # GitHub CLI OAuth config (persisted)
 ├── workspaces.conf      # Workspace folder mappings (name=path)
 ├── memory/              # Daily logs
 │   ├── 2026-02-23.md

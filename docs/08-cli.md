@@ -51,7 +51,7 @@ mobyclaw init
   │     └─ WhatsApp?  → auth or skip
   │
   ├─ 4. Service Credentials (all optional, default: skip)
-  │     ├─ GitHub?  → GH_TOKEN or skip
+  │     ├─ GitHub?  → OAuth device flow (after first start)
   │     ├─ AWS?     → key pair or skip
   │     └─ Custom?  → name=value loop
   │

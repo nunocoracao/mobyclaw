@@ -80,15 +80,28 @@ Inside the container, workspaces appear at `/workspace/<name>`.
 
 Give Moby access to external tools:
 
+### GitHub (OAuth device flow)
+
+No token needed - GitHub uses OAuth:
+
+```bash
+# After starting Moby, just ask:
+mobyclaw run "authenticate with GitHub"
+# Moby runs `gh auth login` and gives you a code + URL
+```
+
+The OAuth session is persisted at `~/.mobyclaw/gh/` and survives restarts.
+
+### Other Services
+
 ```bash
 # ~/.mobyclaw/credentials.env
-GH_TOKEN=ghp_xxxxxxxxxxxx
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...
 NPM_TOKEN=npm_...
 ```
 
-These are injected as environment variables into the agent container. Moby can use `gh`, `aws`, etc.
+These are injected as environment variables into the agent container. Moby can use `aws`, `npm`, etc.
 
 !!! warning "Security"
     Moby never displays credential values. They're only available as env vars inside the container.
