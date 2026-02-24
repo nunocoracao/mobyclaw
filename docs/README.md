@@ -21,12 +21,14 @@
 | 11 | [Roadmap](11-roadmap.md) | Phased roadmap with status |
 | 12 | [Decisions](12-decisions.md) | Architectural Decision Records (ADR log) |
 | 13 | [Open Questions](13-open-questions.md) | Unresolved and resolved questions |
+| 14 | [Tool Gateway](14-tool-gateway.md) | MCP aggregator, external service integration, auth management |
 
 ## Quick Reference
 
-**Two services:**
+**Three services:**
 - **moby** — AI brain (cagent serve api, port 8080)
 - **gateway** — Orchestrator (Node.js/Express, port 3000)
+- **tool-gateway** — MCP aggregator (Node.js, port 8081 MCP + port 3100 admin) *(planned)*
 
 **Key paths:**
 - `~/.mobyclaw/` — All agent state (memory, config, schedules)

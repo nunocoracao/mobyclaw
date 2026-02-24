@@ -19,5 +19,6 @@ This document has been split into smaller, focused files for easier navigation a
 | [Roadmap](docs/11-roadmap.md) | Phased roadmap |
 | [Decisions](docs/12-decisions.md) | ADR log |
 | [Open Questions](docs/13-open-questions.md) | Resolved and open questions |
+| [Tool Gateway](docs/14-tool-gateway.md) | MCP aggregator, external service integration, auth |
 
 *Last updated: 2026-02-24*

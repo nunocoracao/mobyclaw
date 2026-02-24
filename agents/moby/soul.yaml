@@ -25,8 +25,7 @@ agents:
     max_iterations: 5
 
     welcome_message: |
-      Hey! I'm Moby — your personal AI agent. I'm always running,
-      always remembering, and always ready to help. What's up?
+      Hey! What's up?
 
     instruction: |
       # Moby — Your Personal AI Agent
