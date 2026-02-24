@@ -20,5 +20,6 @@ This document has been split into smaller, focused files for easier navigation a
 | [Decisions](docs/12-decisions.md) | ADR log |
 | [Open Questions](docs/13-open-questions.md) | Resolved and open questions |
 | [Tool Gateway](docs/14-tool-gateway.md) | MCP aggregator, external service integration, auth |
+| [Integrations](docs/15-integrations.md) | Read-only Slack, Notion, Gmail, Calendar design |
 
 *Last updated: 2026-02-24*

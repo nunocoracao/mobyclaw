@@ -95,17 +95,43 @@ Success criteria:
 - **Snapshot trimming** — compact mode (default) reduces 15K-token snapshots to ~1500 tokens ✅
 - `browser_snapshot` accepts `full=true` for complete accessibility tree when needed ✅
 
-### Phase 3 - Workspace + Integrations
+### Phase 3 - Read-Only Integrations 🔜 PLANNED
+
+**Goal:** Agent can read from Slack, Notion, Gmail, and Google Calendar.
+
+Full design document: [`docs/15-integrations.md`](15-integrations.md)
+
+Deliverables:
+- **Auth infrastructure**: Token store (encrypted), auth admin API endpoints, chat-mediated OAuth flow
+- **Notion** (4 tools): `notion_search`, `notion_page`, `notion_database`, `notion_list` — internal integration token (API key)
+- **Google** (7 tools): `gmail_inbox`, `gmail_read`, `gmail_search`, `gmail_labels`, `calendar_today`, `calendar_upcoming`, `calendar_search` — OAuth 2.0 (shared project for Gmail + Calendar)
+- **Slack** (4 tools): `slack_channels`, `slack_history`, `slack_search`, `slack_profile` — OAuth 2.0 User Token
+- **Soul.yaml**: Integration tool descriptions, "connect {service}" conversational flow
+- **15 new MCP tools** (34 total)
+
+Implementation order: Auth infra → Notion (simplest) → Google → Slack
+
+Success criteria:
+- User says "connect notion" → pastes token → Moby confirms connection
+- User says "connect google" → clicks OAuth link → authorizes → Moby confirms
+- Moby can search Notion, read pages, query databases
+- Moby can check inbox, read emails, summarize threads
+- Moby can check today's calendar, upcoming events, find meeting times
+- Moby can list Slack channels, read history, search messages
+- All tokens encrypted at rest
+- All access is read-only (no write scopes)
+
+### Phase 4 - Workspace + More Channels
 
 **Goal:** Agent can access local files. More messaging channels.
 
 Deliverables:
-- More messaging adapters in gateway (WhatsApp, Discord, Slack)
+- More messaging adapters in gateway (Discord, etc.)
 - Vector memory search (semantic recall over memory files)
 - Webhook ingress (GitHub events, etc.)
 - Web UI for management and chat
 
-### Phase 4 - Production Hardening
+### Phase 5 - Production Hardening
 
 **Goal:** Ready for real 24/7 workloads.
 

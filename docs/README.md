@@ -22,6 +22,7 @@
 | 12 | [Decisions](12-decisions.md) | Architectural Decision Records (ADR log) |
 | 13 | [Open Questions](13-open-questions.md) | Unresolved and resolved questions |
 | 14 | [Tool Gateway](14-tool-gateway.md) | MCP aggregator, browser automation, external service integration, auth |
+| 15 | [Integrations](15-integrations.md) | Read-only Slack, Notion, Gmail, Google Calendar design |
 
 ## Quick Reference
 
