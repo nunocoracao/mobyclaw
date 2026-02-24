@@ -26,8 +26,10 @@ theme:
     - content.code.copy
     - content.code.annotate
     - toc.follow
-    - search.suggest
-    - search.highlight
+
+plugins:
+  - search:
+      enabled: false
 
 extra_css:
   - stylesheets/extra.css

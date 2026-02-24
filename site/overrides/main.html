@@ -2,7 +2,7 @@
 
 {% block announce %}
 <style>
-  /* ─── Shared top bar (matches landing page nav) ── */
+  /* ─── Our top bar IS the header ──────────────── */
   .mc-topbar {
     display: flex;
     align-items: center;
@@ -18,9 +18,7 @@
     text-decoration: none;
     transition: color .2s;
   }
-  .mc-topbar a:hover {
-    color: #e2e8f0;
-  }
+  .mc-topbar a:hover { color: #e2e8f0; }
   .mc-topbar-logo {
     font-weight: 700;
     font-size: .95rem;
@@ -37,20 +35,12 @@
     padding: 0;
     align-items: center;
   }
-  .mc-topbar-links a {
-    font-size: .8rem;
-  }
-  .mc-topbar-links .mc-active {
-    color: #38bdf8 !important;
-  }
-  .mc-topbar-github {
-    display: flex;
-    align-items: center;
-    gap: .3rem;
-  }
+  .mc-topbar-links a { font-size: .8rem; }
+  .mc-topbar-links .mc-active { color: #38bdf8 !important; }
+  .mc-topbar-github { display: flex; align-items: center; gap: .3rem; }
   .mc-topbar-github svg { fill: currentColor; }
 
-  /* ─── Announce bar styling ───────────────────── */
+  /* ─── Announce bar = our nav ─────────────────── */
   .md-banner {
     background: #070b14 !important;
     border-bottom: 1px solid #1e293b;
@@ -61,24 +51,23 @@
     max-width: none !important;
   }
 
-  /* ─── Hide MkDocs header redundancies ────────── */
-  /* Hide the logo + title (our top bar has the logo) */
-  .md-header__button.md-logo { display: none; }
-  .md-header__title { display: none; }
-  /* Hide the repo link in header (our top bar has GitHub) */
-  .md-header__source { display: none; }
-  /* Make the header minimal: just search + drawer toggle */
-  .md-header {
-    background: #0d1220 !important;
-    border-bottom: 1px solid #1e293b;
-    box-shadow: none !important;
-  }
+  /* ─── HIDE the entire MkDocs header ──────────── */
+  .md-header { display: none !important; }
 
   @media (max-width: 768px) {
     .mc-topbar-links { gap: .8rem; }
     .mc-topbar-links .mc-hide-mobile { display: none; }
-    /* On mobile, show the drawer toggle again */
-    .md-header__title { display: block; }
+    /* On mobile, show MkDocs header for the drawer toggle only */
+    .md-header {
+      display: flex !important;
+      background: #0d1220 !important;
+      box-shadow: none !important;
+    }
+    .md-header__button.md-logo { display: none; }
+    .md-header__title { display: none; }
+    .md-header__source { display: none; }
+    .md-header .md-header__button[for="__search"] { display: none; }
+    .md-search { display: none; }
   }
 </style>
 <div class="mc-topbar">
