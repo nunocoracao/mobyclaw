@@ -371,6 +371,7 @@
     <ul class="nav-links">
       <li><a href="#features">Features</a></li>
       <li><a href="#how-it-works">How It Works</a></li>
+      <li><a href="#tools">Tools</a></li>
       <li><a href="#install">Install</a></li>
       <li><a href="#configure">Configure</a></li>
       <li><a href="docs/" style="color: var(--accent);">Docs</a></li>
@@ -393,8 +394,9 @@
         <p class="subtitle">
           A long-lived AI agent that runs in Docker on your machine.
           Always on, always remembering, always ready to help.
-          Chat via Telegram, get proactive reminders, and let it
-          work on your projects — all with persistent memory.
+          Chat via Telegram, browse the web, fill out forms,
+          get proactive reminders, and let it work on your
+          projects — all with persistent memory.
         </p>
         <div class="cta-row">
           <a href="#install" class="btn btn-primary">Get Started →</a>
@@ -539,6 +541,33 @@
 
       <div class="feature-card">
         <svg class="feature-icon" viewBox="0 0 48 48" fill="none">
+          <rect x="4" y="4" width="40" height="40" rx="12" fill="#06b6d4" opacity="0.12"/>
+          <rect x="10" y="12" width="28" height="22" rx="4" stroke="#06b6d4" stroke-width="2.5"/>
+          <path d="M10 20h28" stroke="#06b6d4" stroke-width="2" opacity="0.5"/>
+          <circle cx="15" cy="16" r="1.5" fill="#06b6d4" opacity="0.6"/>
+          <circle cx="20" cy="16" r="1.5" fill="#06b6d4" opacity="0.6"/>
+          <circle cx="25" cy="16" r="1.5" fill="#06b6d4" opacity="0.6"/>
+          <path d="M16 27h16M16 31h10" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+          <path d="M24 38v4" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+          <path d="M18 42h12" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+        </svg>
+        <h3>Full Web Browser</h3>
+        <p>Headless Chromium powered by Playwright. Navigate pages, fill forms, click buttons, take screenshots. Create accounts, complete multi-step flows — all automated.</p>
+      </div>
+
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 48 48" fill="none">
+          <rect x="4" y="4" width="40" height="40" rx="12" fill="#22d3ee" opacity="0.12"/>
+          <circle cx="22" cy="22" r="8" stroke="#22d3ee" stroke-width="2.5"/>
+          <path d="M28 28l8 8" stroke="#22d3ee" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M18 22h8M22 18v8" stroke="#22d3ee" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/>
+        </svg>
+        <h3>Web Search &amp; Reading</h3>
+        <p>Search the web via DuckDuckGo, fetch and extract clean text from any URL. Research topics, read articles, check the weather — 19 tools total.</p>
+      </div>
+
+      <div class="feature-card">
+        <svg class="feature-icon" viewBox="0 0 48 48" fill="none">
           <rect x="4" y="4" width="40" height="40" rx="12" fill="#a78bfa" opacity="0.12"/>
           <path d="M24 14v20M18 20l6-6 6 6" stroke="#a78bfa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
           <circle cx="24" cy="38" r="3" fill="#a78bfa" opacity="0.5"/>
@@ -556,71 +585,162 @@
 <section id="how-it-works" style="background: linear-gradient(180deg, transparent, rgba(56, 189, 248, 0.03), transparent);">
   <div class="container">
     <h2>How It Works</h2>
-    <p>Two Docker containers working together — a gateway that handles messaging, and an AI brain powered by cagent.</p>
+    <p>Three Docker containers working together — a gateway for messaging, an AI brain powered by cagent, and a tool gateway with a full headless browser.</p>
     <div class="how-it-works-diagram">
-      <svg viewBox="0 0 800 380" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 800 460" fill="none" xmlns="http://www.w3.org/2000/svg">
         <!-- Background -->
-        <rect x="20" y="20" width="760" height="340" rx="20" fill="#111827" stroke="#1e293b" stroke-width="1.5" opacity="0.5"/>
-        <text x="50" y="52" font-family="sans-serif" font-size="13" fill="#94a3b8" opacity="0.6">Docker Compose Stack</text>
+        <rect x="20" y="20" width="760" height="420" rx="20" fill="#111827" stroke="#1e293b" stroke-width="1.5" opacity="0.5"/>
+        <text x="50" y="52" font-family="sans-serif" font-size="13" fill="#94a3b8" opacity="0.6">Docker Compose Stack — 3 containers</text>
 
         <!-- Gateway box -->
-        <rect x="60" y="80" width="300" height="240" rx="14" fill="#0f172a" stroke="#38bdf8" stroke-width="1.5" opacity="0.8"/>
-        <rect x="60" y="80" width="300" height="36" rx="14" fill="#38bdf8" opacity="0.08"/>
-        <rect x="60" y="102" width="300" height="14" fill="#0f172a"/>
-        <text x="80" y="104" font-family="monospace" font-size="14" fill="#38bdf8" font-weight="bold">gateway</text>
-        <text x="250" y="104" font-family="monospace" font-size="11" fill="#94a3b8">:3000</text>
+        <rect x="60" y="75" width="220" height="180" rx="14" fill="#0f172a" stroke="#38bdf8" stroke-width="1.5" opacity="0.8"/>
+        <rect x="60" y="75" width="220" height="32" rx="14" fill="#38bdf8" opacity="0.08"/>
+        <rect x="60" y="95" width="220" height="12" fill="#0f172a"/>
+        <text x="80" y="98" font-family="monospace" font-size="13" fill="#38bdf8" font-weight="bold">gateway</text>
+        <text x="200" y="98" font-family="monospace" font-size="10" fill="#94a3b8">:3000</text>
 
-        <!-- Gateway modules -->
-        <rect x="80" y="130" width="120" height="34" rx="8" fill="#38bdf8" opacity="0.08" stroke="#38bdf8" stroke-width="1" opacity="0.3"/>
-        <text x="95" y="152" font-family="sans-serif" font-size="12" fill="#38bdf8">🔌 Adapters</text>
+        <rect x="76" y="118" width="90" height="28" rx="6" fill="#38bdf8" opacity="0.08" stroke="#38bdf8" stroke-width="1" opacity="0.3"/>
+        <text x="84" y="137" font-family="sans-serif" font-size="11" fill="#38bdf8">🔌 Telegram</text>
 
-        <rect x="220" y="130" width="120" height="34" rx="8" fill="#818cf8" opacity="0.08" stroke="#818cf8" stroke-width="1" opacity="0.3"/>
-        <text x="232" y="152" font-family="sans-serif" font-size="12" fill="#818cf8">📡 Sessions</text>
+        <rect x="176" y="118" width="90" height="28" rx="6" fill="#818cf8" opacity="0.08" stroke="#818cf8" stroke-width="1" opacity="0.3"/>
+        <text x="184" y="137" font-family="sans-serif" font-size="11" fill="#818cf8">📡 Sessions</text>
 
-        <rect x="80" y="178" width="120" height="34" rx="8" fill="#34d399" opacity="0.08" stroke="#34d399" stroke-width="1" opacity="0.3"/>
-        <text x="92" y="200" font-family="sans-serif" font-size="12" fill="#34d399">⏰ Scheduler</text>
+        <rect x="76" y="156" width="90" height="28" rx="6" fill="#34d399" opacity="0.08" stroke="#34d399" stroke-width="1" opacity="0.3"/>
+        <text x="84" y="175" font-family="sans-serif" font-size="11" fill="#34d399">⏰ Scheduler</text>
 
-        <rect x="220" y="178" width="120" height="34" rx="8" fill="#f472b6" opacity="0.08" stroke="#f472b6" stroke-width="1" opacity="0.3"/>
-        <text x="232" y="200" font-family="sans-serif" font-size="12" fill="#f472b6">💓 Heartbeat</text>
+        <rect x="176" y="156" width="90" height="28" rx="6" fill="#f472b6" opacity="0.08" stroke="#f472b6" stroke-width="1" opacity="0.3"/>
+        <text x="184" y="175" font-family="sans-serif" font-size="11" fill="#f472b6">💓 Heartbeat</text>
 
-        <rect x="80" y="226" width="120" height="34" rx="8" fill="#fb923c" opacity="0.08" stroke="#fb923c" stroke-width="1" opacity="0.3"/>
-        <text x="95" y="248" font-family="sans-serif" font-size="12" fill="#fb923c">📬 Delivery</text>
+        <rect x="76" y="194" width="90" height="28" rx="6" fill="#fb923c" opacity="0.08" stroke="#fb923c" stroke-width="1" opacity="0.3"/>
+        <text x="88" y="213" font-family="sans-serif" font-size="11" fill="#fb923c">📬 Deliver</text>
 
-        <rect x="220" y="226" width="120" height="34" rx="8" fill="#a78bfa" opacity="0.08" stroke="#a78bfa" stroke-width="1" opacity="0.3"/>
-        <text x="235" y="248" font-family="sans-serif" font-size="12" fill="#a78bfa">🔀 Routes</text>
+        <rect x="176" y="194" width="90" height="28" rx="6" fill="#a78bfa" opacity="0.08" stroke="#a78bfa" stroke-width="1" opacity="0.3"/>
+        <text x="188" y="213" font-family="sans-serif" font-size="11" fill="#a78bfa">🔀 Routes</text>
 
         <!-- Arrow gateway → moby -->
-        <line x1="360" y1="200" x2="430" y2="200" stroke="#38bdf8" stroke-width="2" opacity="0.5"/>
-        <polygon points="430,195 440,200 430,205" fill="#38bdf8" opacity="0.5"/>
-        <text x="370" y="190" font-family="sans-serif" font-size="10" fill="#94a3b8">HTTP+SSE</text>
+        <line x1="280" y1="168" x2="320" y2="168" stroke="#38bdf8" stroke-width="2" opacity="0.5"/>
+        <polygon points="318,163 328,168 318,173" fill="#38bdf8" opacity="0.5"/>
+        <text x="282" y="160" font-family="sans-serif" font-size="9" fill="#94a3b8">HTTP</text>
 
         <!-- Moby box -->
-        <rect x="440" y="80" width="300" height="240" rx="14" fill="#0f172a" stroke="#818cf8" stroke-width="1.5" opacity="0.8"/>
-        <rect x="440" y="80" width="300" height="36" rx="14" fill="#818cf8" opacity="0.08"/>
-        <rect x="440" y="102" width="300" height="14" fill="#0f172a"/>
-        <text x="460" y="104" font-family="monospace" font-size="14" fill="#818cf8" font-weight="bold">moby</text>
-        <text x="630" y="104" font-family="monospace" font-size="11" fill="#94a3b8">:8080</text>
+        <rect x="328" y="75" width="220" height="180" rx="14" fill="#0f172a" stroke="#818cf8" stroke-width="1.5" opacity="0.8"/>
+        <rect x="328" y="75" width="220" height="32" rx="14" fill="#818cf8" opacity="0.08"/>
+        <rect x="328" y="95" width="220" height="12" fill="#0f172a"/>
+        <text x="348" y="98" font-family="monospace" font-size="13" fill="#818cf8" font-weight="bold">moby</text>
+        <text x="468" y="98" font-family="monospace" font-size="10" fill="#94a3b8">:8080</text>
 
-        <!-- Moby internals -->
-        <text x="470" y="145" font-family="monospace" font-size="12" fill="#94a3b8">cagent serve api</text>
+        <text x="348" y="128" font-family="monospace" font-size="11" fill="#94a3b8">cagent serve api</text>
 
-        <rect x="460" y="160" width="260" height="44" rx="8" fill="#818cf8" opacity="0.05" stroke="#818cf8" stroke-width="1" opacity="0.2"/>
-        <text x="475" y="178" font-family="sans-serif" font-size="11" fill="#e2e8f0" opacity="0.7">🧠 LLM (Anthropic / OpenAI)</text>
-        <text x="475" y="196" font-family="sans-serif" font-size="11" fill="#94a3b8">Model inference + reasoning</text>
+        <rect x="344" y="138" width="190" height="28" rx="6" fill="#818cf8" opacity="0.05" stroke="#818cf8" stroke-width="1" opacity="0.2"/>
+        <text x="354" y="157" font-family="sans-serif" font-size="11" fill="#e2e8f0" opacity="0.7">🧠 LLM (Anthropic / OpenAI)</text>
 
-        <rect x="460" y="216" width="125" height="34" rx="8" fill="#34d399" opacity="0.08" stroke="#34d399" stroke-width="1" opacity="0.3"/>
-        <text x="474" y="238" font-family="sans-serif" font-size="11" fill="#34d399">🔧 Shell</text>
+        <rect x="344" y="176" width="90" height="28" rx="6" fill="#34d399" opacity="0.08" stroke="#34d399" stroke-width="1" opacity="0.3"/>
+        <text x="354" y="195" font-family="sans-serif" font-size="11" fill="#34d399">🔧 Shell</text>
 
-        <rect x="595" y="216" width="125" height="34" rx="8" fill="#fb923c" opacity="0.08" stroke="#fb923c" stroke-width="1" opacity="0.3"/>
-        <text x="610" y="238" font-family="sans-serif" font-size="11" fill="#fb923c">📁 Filesystem</text>
+        <rect x="444" y="176" width="90" height="28" rx="6" fill="#fb923c" opacity="0.08" stroke="#fb923c" stroke-width="1" opacity="0.3"/>
+        <text x="454" y="195" font-family="sans-serif" font-size="11" fill="#fb923c">📁 Files</text>
 
-        <rect x="460" y="262" width="125" height="34" rx="8" fill="#38bdf8" opacity="0.08" stroke="#38bdf8" stroke-width="1" opacity="0.3"/>
-        <text x="474" y="284" font-family="sans-serif" font-size="11" fill="#38bdf8">🌐 Fetch</text>
+        <rect x="344" y="214" width="90" height="28" rx="6" fill="#38bdf8" opacity="0.08" stroke="#38bdf8" stroke-width="1" opacity="0.3"/>
+        <text x="354" y="233" font-family="sans-serif" font-size="11" fill="#38bdf8">🌐 Fetch</text>
 
-        <rect x="595" y="262" width="125" height="34" rx="8" fill="#a78bfa" opacity="0.08" stroke="#a78bfa" stroke-width="1" opacity="0.3"/>
-        <text x="610" y="284" font-family="sans-serif" font-size="11" fill="#a78bfa">💭 Think</text>
+        <rect x="444" y="214" width="90" height="28" rx="6" fill="#a78bfa" opacity="0.08" stroke="#a78bfa" stroke-width="1" opacity="0.3"/>
+        <text x="454" y="233" font-family="sans-serif" font-size="11" fill="#a78bfa">🔗 MCP</text>
+
+        <!-- Arrow moby → tool-gateway -->
+        <line x1="548" y1="168" x2="588" y2="168" stroke="#34d399" stroke-width="2" opacity="0.5"/>
+        <polygon points="586,163 596,168 586,173" fill="#34d399" opacity="0.5"/>
+        <text x="550" y="160" font-family="sans-serif" font-size="9" fill="#94a3b8">MCP</text>
+
+        <!-- Tool-gateway box -->
+        <rect x="596" y="75" width="160" height="180" rx="14" fill="#0f172a" stroke="#34d399" stroke-width="1.5" opacity="0.8"/>
+        <rect x="596" y="75" width="160" height="32" rx="14" fill="#34d399" opacity="0.08"/>
+        <rect x="596" y="95" width="160" height="12" fill="#0f172a"/>
+        <text x="610" y="98" font-family="monospace" font-size="12" fill="#34d399" font-weight="bold">tool-gateway</text>
+
+        <rect x="612" y="118" width="130" height="28" rx="6" fill="#34d399" opacity="0.08" stroke="#34d399" stroke-width="1" opacity="0.3"/>
+        <text x="622" y="137" font-family="sans-serif" font-size="11" fill="#34d399">🎭 Playwright</text>
+
+        <rect x="612" y="156" width="130" height="28" rx="6" fill="#38bdf8" opacity="0.08" stroke="#38bdf8" stroke-width="1" opacity="0.3"/>
+        <text x="622" y="175" font-family="sans-serif" font-size="11" fill="#38bdf8">🔍 Web Search</text>
+
+        <rect x="612" y="194" width="130" height="28" rx="6" fill="#fb923c" opacity="0.08" stroke="#fb923c" stroke-width="1" opacity="0.3"/>
+        <text x="622" y="213" font-family="sans-serif" font-size="11" fill="#fb923c">📄 Page Fetch</text>
+
+        <rect x="612" y="232" width="130" height="10" rx="5" fill="#818cf8" opacity="0.06"/>
+        <text x="622" y="241" font-family="sans-serif" font-size="10" fill="#94a3b8">🌤️ Weather</text>
+
+        <!-- Bottom section: volumes + info -->
+        <line x1="60" y1="280" x2="740" y2="280" stroke="#1e293b" stroke-width="1" opacity="0.5"/>
+
+        <text x="80" y="310" font-family="sans-serif" font-size="12" fill="#94a3b8">Volumes:</text>
+
+        <rect x="80" y="322" width="190" height="34" rx="8" fill="#818cf8" opacity="0.05" stroke="#818cf8" stroke-width="1" opacity="0.2"/>
+        <text x="94" y="344" font-family="monospace" font-size="11" fill="#818cf8">~/.mobyclaw/</text>
+        <text x="205" y="344" font-family="sans-serif" font-size="10" fill="#94a3b8">memory</text>
+
+        <rect x="290" y="322" width="190" height="34" rx="8" fill="#fb923c" opacity="0.05" stroke="#fb923c" stroke-width="1" opacity="0.2"/>
+        <text x="304" y="344" font-family="monospace" font-size="11" fill="#fb923c">/workspace/*</text>
+        <text x="415" y="344" font-family="sans-serif" font-size="10" fill="#94a3b8">projects</text>
+
+        <rect x="500" y="322" width="190" height="34" rx="8" fill="#34d399" opacity="0.05" stroke="#34d399" stroke-width="1" opacity="0.2"/>
+        <text x="514" y="344" font-family="monospace" font-size="11" fill="#34d399">/source</text>
+        <text x="580" y="344" font-family="sans-serif" font-size="10" fill="#94a3b8">self-modify</text>
+
+        <!-- Tool count badge -->
+        <text x="80" y="390" font-family="sans-serif" font-size="12" fill="#94a3b8">Tools:</text>
+        <rect x="120" y="376" width="30" height="20" rx="10" fill="#38bdf8" opacity="0.2"/>
+        <text x="128" y="391" font-family="sans-serif" font-size="12" fill="#38bdf8" font-weight="bold">19</text>
+        <text x="160" y="390" font-family="sans-serif" font-size="11" fill="#94a3b8">MCP tools via tool-gateway — browser automation, web search, fetch, weather</text>
+
+        <text x="80" y="418" font-family="sans-serif" font-size="12" fill="#94a3b8">Built-in:</text>
+        <text x="160" y="418" font-family="sans-serif" font-size="11" fill="#94a3b8">shell, filesystem, fetch, think — directly in cagent</text>
       </svg>
     </div>
+  </div>
+</section>
+
+<!-- ─── Tools ──────────────────────────────────────── -->
+<section id="tools" style="background: linear-gradient(180deg, transparent, rgba(52, 211, 153, 0.03), transparent);">
+  <div class="container">
+    <h2>19 Tools at Moby's Fingertips</h2>
+    <p>From quick web lookups to full browser automation — all exposed via MCP through the tool-gateway container.</p>
+    <div class="config-grid" style="margin-top: 2rem;">
+
+      <div class="config-card">
+        <h3>🎭 Browser Automation</h3>
+        <p>Full headless Chromium powered by Playwright. Navigate, click, type, fill forms, take screenshots, manage tabs.</p>
+        <pre><code>You: "Create an account on example.com"
+
+Moby:
+  1. browser_navigate("example.com/signup")
+  2. browser_fill_form(email, password, name)
+  3. browser_click("Sign up" button)
+  4. browser_screenshot() → "Done! ✅"</code></pre>
+      </div>
+
+      <div class="config-card">
+        <h3 style="color: #38bdf8;">🔍 Web Search &amp; Fetch</h3>
+        <p>Search DuckDuckGo and extract clean, readable text from any URL — like reader mode.</p>
+        <pre><code>You: "What's new with Docker Compose?"
+
+Moby:
+  1. browser_search("Docker Compose 2026")
+  2. browser_fetch(top result URL)
+  3. Summarizes the article for you</code></pre>
+      </div>
+
+      <div class="config-card">
+        <h3 style="color: #fb923c;">🌤️ Weather &amp; More</h3>
+        <p>Current weather and forecasts for any location via Open-Meteo. No API key needed.</p>
+        <pre><code>You: "What's the weather in Lisbon?"
+
+Moby: "16.9°C, overcast, 76% humidity
+  with a light breeze from the NW.
+  Tomorrow: 18°C and partly cloudy."</code></pre>
+      </div>
+
+    </div>
+    <p style="margin-top: 2rem; font-size: 0.9rem;">16 browser tools + 3 utility tools = 19 total. All connected via <a href="docs/">MCP protocol</a> through a stdio↔HTTP bridge.</p>
   </div>
 </section>
 

@@ -21,14 +21,18 @@
 | 11 | [Roadmap](11-roadmap.md) | Phased roadmap with status |
 | 12 | [Decisions](12-decisions.md) | Architectural Decision Records (ADR log) |
 | 13 | [Open Questions](13-open-questions.md) | Unresolved and resolved questions |
-| 14 | [Tool Gateway](14-tool-gateway.md) | MCP aggregator, external service integration, auth management |
+| 14 | [Tool Gateway](14-tool-gateway.md) | MCP aggregator, browser automation, external service integration, auth |
 
 ## Quick Reference
 
 **Three services:**
 - **moby** — AI brain (cagent serve api, port 8080)
 - **gateway** — Orchestrator (Node.js/Express, port 3000)
-- **tool-gateway** — MCP aggregator (Node.js, port 8081 MCP + port 3100 admin) *(planned)*
+- **tool-gateway** — External tools + browser (Node.js/Playwright, port 8081 MCP + port 3100 admin)
+
+**19 MCP tools** via tool-gateway:
+- 3 quick tools: `browser_fetch`, `browser_search`, `weather_get`
+- 16 browser automation: `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_type`, `browser_fill_form`, `browser_select_option`, `browser_hover`, `browser_press_key`, `browser_scroll`, `browser_back`, `browser_forward`, `browser_wait`, `browser_tabs`, `browser_close`, `browser_eval`
 
 **Key paths:**
 - `~/.mobyclaw/` — All agent state (memory, config, schedules)

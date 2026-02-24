@@ -1,76 +1,91 @@
 ## 3. Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Host Machine                                 │
-│                                                                   │
-│  ┌────────────┐                                                   │
-│  │ mobyclaw   │── docker compose up/down/logs/run ──┐            │
-│  │ CLI        │                                       │            │
-│  └────────────┘                                       ▼            │
-│  ┌─────────────────────────────────────────────────────────────┐  │
-│  │                  Docker Compose Stack                         │  │
-│  │                  (mobyclaw network)                           │  │
-│  │                                                               │  │
-│  │  ┌───────────────────────────────────────────────────────┐   │  │
-│  │  │                    gateway                             │   │  │
-│  │  │              (orchestrator container)                   │   │  │
-│  │  │                                                         │   │  │
-│  │  │  ┌────────────┐ ┌──────────┐ ┌──────────────────────┐ │   │  │
-│  │  │  │  Messaging  │ │ Session  │ │     Scheduler        │ │   │  │
-│  │  │  │  Adapters   │ │ Store +  │ │  + Heartbeat         │ │   │  │
-│  │  │  │ TG/WA/DC/SL│ │ Overflow │ │                      │ │   │  │
-│  │  │  └──────┬─────┘ └──────────┘ └──────────┬───────────┘ │   │  │
-│  │  │         │                                │              │   │  │
-│  │  │    ┌────┴─────┐ ┌──────────┐ ┌──────────┴───────────┐ │   │  │
-│  │  │    │ Adapter   │ │ Channel  │ │    Orchestrator      │ │   │  │
-│  │  │    │ Registry  │ │ Store    │ │  (session lifecycle)  │ │   │  │
-│  │  │    └──────────┘ └──────────┘ └──────────┬───────────┘ │   │  │
-│  │  │                                         │              │   │  │
-│  │  │              HTTP + SSE to agent         │              │   │  │
-│  │  │                                         │              │   │  │
-│  │  │  :3000 (REST API + SSE streaming)       │              │   │  │
-│  │  └─────────────────────────────────────────┼──────────┘   │  │
-│  │                                             │               │  │
-│  │                                             ▼               │  │
-│  │  ┌───────────────────────────────────────────────────────┐   │  │
-│  │  │                     moby                               │   │  │
-│  │  │              (agent container)                          │   │  │
-│  │  │         cagent serve api soul.yaml                     │   │  │
-│  │  │                                                         │   │  │
-│  │  │  tools: shell │ filesystem │ fetch │ think              │   │  │
-│  │  │                                                         │   │  │
-│  │  │  :8080 (cagent HTTP API + SSE)                         │   │  │
-│  │  └──────────┬────────────────────────────────┬────────────┘   │  │
-│  │             │                                │                 │  │
-│  │     ~/.mobyclaw/ (bind mount)       /source (bind mount)       │  │
-│  │     memory, tasks, soul.yaml        project source code        │  │
-│  │     schedules, channels             (self-modification)        │  │
-│  │             │                                │                 │  │
-│  │  ┌──────────┴──────────┐     ┌───────────────┴──────────┐     │  │
-│  │  │  /workspace/*       │     │  /source                 │     │  │
-│  │  │  User projects      │     │  mobyclaw source code    │     │  │
-│  │  │  (bind mounts from  │     │  (bind mount from host   │     │  │
-│  │  │   workspaces.conf)  │     │   project root)          │     │  │
-│  │  └─────────────────────┘     └──────────────────────────┘     │  │
-│  │                                                               │  │
-│  └─────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Host Machine                                  │
+│                                                                       │
+│  ┌────────────┐                                                       │
+│  │ mobyclaw   │── docker compose up/down/logs/run ──┐                │
+│  │ CLI        │                                       │                │
+│  └────────────┘                                       ▼                │
+│  ┌───────────────────────────────────────────────────────────────────┐│
+│  │                     Docker Compose Stack                           ││
+│  │                     (mobyclaw network)                              ││
+│  │                                                                    ││
+│  │  ┌────────────────────────────────┐                                ││
+│  │  │            gateway             │                                ││
+│  │  │     (orchestrator container)   │                                ││
+│  │  │                                │                                ││
+│  │  │  ┌──────────┐  ┌───────────┐  │                                ││
+│  │  │  │ Messaging │  │ Session   │  │                                ││
+│  │  │  │ Adapters  │  │ Store +   │  │                                ││
+│  │  │  │ (Telegram)│  │ Queue     │  │                                ││
+│  │  │  └──────────┘  └───────────┘  │                                ││
+│  │  │  ┌──────────┐  ┌───────────┐  │                                ││
+│  │  │  │ Scheduler │  │ Heartbeat │  │                                ││
+│  │  │  └──────────┘  └───────────┘  │                                ││
+│  │  │  :3000 (REST API + SSE)       │                                ││
+│  │  └──────────────┬─────────────────┘                                ││
+│  │                 │ HTTP + SSE                                       ││
+│  │                 ▼                                                  ││
+│  │  ┌────────────────────────────────┐     ┌─────────────────────┐   ││
+│  │  │             moby               │     │    tool-gateway     │   ││
+│  │  │       (agent container)        │     │ (browser + tools)   │   ││
+│  │  │    cagent serve api soul.yaml  │     │                     │   ││
+│  │  │                                │     │  🌐 Playwright      │   ││
+│  │  │  tools:                        │ MCP │  🔍 Search          │   ││
+│  │  │    shell │ filesystem │ fetch  │◀───▶│  📄 Fetch           │   ││
+│  │  │    mcp-bridge (stdio↔HTTP) ────┼─────│  🌤️ Weather         │   ││
+│  │  │                                │     │                     │   ││
+│  │  │  :8080 (cagent HTTP API)       │     │  :8081 MCP          │   ││
+│  │  └─────┬──────────────────┬───────┘     │  :3100 Admin        │   ││
+│  │        │                  │             └─────────────────────┘   ││
+│  │   ~/.mobyclaw/       /source                                       ││
+│  │   (bind mount)      (bind mount)                                   ││
+│  │   memory, tasks     self-modification                              ││
+│  │        │                  │                                        ││
+│  │   /workspace/*                                                     ││
+│  │   User projects (bind mounts from workspaces.conf)                 ││
+│  └───────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Container Roles
 
-The stack is **2 services** (simplified from the originally planned 4):
+The stack is **3 services:**
 
 | Container | Role | Technology |
 |---|---|---|
-| **moby** | AI brain — runs cagent, receives prompts, executes tools (shell, filesystem, fetch) | cagent serve api |
 | **gateway** | Orchestrator — messaging adapters, sessions, heartbeat, scheduler, REST API | Node.js (Express) |
+| **moby** | AI brain — runs cagent, receives prompts, executes tools (shell, filesystem, fetch, MCP) | cagent serve api |
+| **tool-gateway** | External tools — headless browser (Playwright), web search, fetch, weather via MCP | Node.js + Playwright + Chromium |
 
-**Note:** The original architecture planned 4 containers (moby, gateway, workspace MCP, memory MCP).
-In practice, cagent's built-in tools (shell, filesystem, fetch) handle everything the MCP services
-would have provided. The agent reads/writes memory and workspace files directly via bind mounts.
-This is simpler, faster, and has fewer moving parts.
+**Evolution:** The original architecture planned 4 containers (moby, gateway, workspace MCP, memory MCP).
+In practice, cagent's built-in tools (shell, filesystem, fetch) handle workspace and memory directly.
+The tool-gateway was added later for external web services and browser automation.
+
+### MCP Tool Bridge
+
+The tool-gateway exposes 19 tools to cagent via MCP (Model Context Protocol):
+
+```
+cagent ──stdio──▸ mcp-bridge (Node.js) ──HTTP──▸ tool-gateway:8081
+                  (in moby container)             (separate container)
+```
+
+The mcp-bridge:
+1. Connects to tool-gateway via `StreamableHTTPClientTransport`
+2. Discovers remote tools via `client.listTools()`
+3. Converts JSON Schema → Zod and re-registers each tool locally via `McpServer.tool()`
+4. Serves them to cagent via `StdioServerTransport`
+
+**19 tools total:**
+- 3 lightweight: `browser_fetch` (Readability extraction), `browser_search` (DuckDuckGo), `weather_get` (Open-Meteo)
+- 16 browser automation: `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_type`, `browser_fill_form`, `browser_select_option`, `browser_hover`, `browser_press_key`, `browser_scroll`, `browser_back`, `browser_forward`, `browser_wait`, `browser_tabs`, `browser_close`, `browser_eval`
+
+Browser tools use **accessibility snapshots with aria-ref** element targeting — the same approach as `@playwright/mcp`. The agent sees a structured text tree of the page, each interactive element gets a ref, and the agent uses those refs to click/type/fill.
+
+### Messaging Adapters
 
 Messaging platforms are **adapters inside the gateway**, not separate containers:
 
@@ -84,26 +99,24 @@ Messaging platforms are **adapters inside the gateway**, not separate containers
 **Why adapters inside gateway, not separate bridge containers?**
 - Simpler: one container, one codebase, one config
 - All messaging libraries are Node.js anyway
-- Separate containers = more images, more networking, more config for little benefit
-- OpenClaw does it this way — all channels live in the gateway
 - Enable/disable via env var presence: no token = adapter doesn't load
 
 ### How Services Connect
 
 ```
                     ┌───────────┐
-  Telegram, WA,     │  gateway  │  messaging, scheduler, heartbeat
-  Discord, Slack ─→ │  :3000    │  REST API, SSE streaming
+  Telegram, CLI,    │  gateway  │  messaging, scheduler, heartbeat
+  HTTP API      ─→  │  :3000    │  REST API, SSE streaming
                     └─────┬─────┘
                           │ HTTP + SSE
                           ▼
-                    ┌───────────┐
-                    │   moby    │  AI brain (cagent serve api)
-                    │  :8080    │  tools: shell, filesystem, fetch
-                    └──┬─────┬──┘
-                       │     │
-              bind mounts:   │
-              ~/.mobyclaw/    /source
+                    ┌───────────┐          ┌───────────────┐
+                    │   moby    │──MCP────▶│ tool-gateway  │
+                    │  :8080    │  bridge  │ :8081 / :3100 │
+                    └──┬─────┬──┘          │               │
+                       │     │             │ Playwright +  │
+              bind mounts:   │             │ Chromium      │
+              ~/.mobyclaw/    /source       └───────────────┘
               /workspace/*   (self-modification)
 ```
 
@@ -112,6 +125,7 @@ Messaging platforms are **adapters inside the gateway**, not separate containers
 | From → To | Protocol | How |
 |---|---|---|
 | gateway → moby | HTTP + SSE | POST to cagent's `/api/sessions/{id}/agent/{name}`, streams response via SSE |
+| moby → tool-gateway | MCP (stdio↔HTTP) | mcp-bridge bridges cagent's stdio MCP to tool-gateway's Streamable HTTP |
 | moby → filesystem | Direct | cagent's built-in tools read/write bind-mounted dirs (~/.mobyclaw/, /workspace/, /source) |
 | CLI → gateway | HTTP + SSE | `mobyclaw run` / `mobyclaw chat` hit gateway's `/prompt/stream` endpoint |
 | agent → gateway | HTTP | Agent calls gateway API via curl (e.g., `POST /api/schedules`, `POST /api/deliver`) |
