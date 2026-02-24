@@ -3,7 +3,10 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
-    paths: [site/**]
+    paths:
+      - site/**
+      - docs/**
+      - mkdocs.yml
   workflow_dispatch:
 
 permissions:
@@ -25,13 +28,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install mkdocs-material
+        run: pip install mkdocs-material
+
+      - name: Build docs
+        run: mkdocs build --config-file mkdocs.yml --site-dir _site/docs
+
+      - name: Assemble site
+        run: |
+          # Landing page at root
+          cp site/index.html _site/index.html
+          # Docs built by mkdocs at /docs/
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment
