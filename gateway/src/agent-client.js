@@ -129,17 +129,25 @@ class AgentClient {
       };
 
       const req = http.request(options, (res) => {
-        // Set socket-level timeout: if no TCP data for 2 minutes,
-        // the connection is probably dead (container restart, network
-        // issue). This catches the case where moby restarts mid-stream
-        // and Docker doesn't send a TCP RST.
+        // Socket-level dead-peer detection: if no TCP data for 5 minutes,
+        // the connection is probably dead (container restart, network issue).
+        // This timeout is RESET on every data event, so it only fires during
+        // true silence — not during legitimate long tool execution gaps.
+        const SOCKET_IDLE_MS = 5 * 60 * 1000;
+        let socketTimer = null;
+
+        function resetSocketTimer() {
+          if (socketTimer) clearTimeout(socketTimer);
+          socketTimer = setTimeout(() => {
+            res.destroy(
+              new Error("Socket idle for 5 minutes — connection likely dead")
+            );
+          }, SOCKET_IDLE_MS);
+        }
+
         if (res.socket) {
           res.socket.setKeepAlive(true, 30_000);
-          res.socket.setTimeout(2 * 60 * 1000, () => {
-            res.destroy(
-              new Error("Socket idle for 2 minutes — connection likely dead")
-            );
-          });
+          resetSocketTimer();
         }
 
         if (res.statusCode !== 200) {
@@ -153,20 +161,15 @@ class AgentClient {
 
         let result = "";
         let buffer = "";
-        let lastActivity = Date.now();
         let currentToolName = null;
 
         res.setEncoding("utf8");
 
-        const activityCheck = setInterval(() => {
-          if (Date.now() - lastActivity > 15 * 60 * 1000) {
-            clearInterval(activityCheck);
-            res.destroy(new Error("No data from agent for 15 minutes"));
-          }
-        }, 30_000);
+        // Activity check is now handled by the socket timer above
+        // (resets on every data event, fires after 5min of true silence)
 
         res.on("data", (chunk) => {
-          lastActivity = Date.now();
+          resetSocketTimer();
           buffer += chunk;
 
           const lines = buffer.split("\n");
@@ -234,7 +237,7 @@ class AgentClient {
         });
 
         res.on("end", () => {
-          clearInterval(activityCheck);
+          if (socketTimer) clearTimeout(socketTimer);
           if (buffer.startsWith("data: ")) {
             try {
               const event = JSON.parse(buffer.slice(6));
@@ -250,7 +253,7 @@ class AgentClient {
         });
 
         res.on("error", (err) => {
-          clearInterval(activityCheck);
+          if (socketTimer) clearTimeout(socketTimer);
           reject(err);
         });
       });
