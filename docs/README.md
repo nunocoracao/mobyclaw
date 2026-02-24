@@ -26,19 +26,25 @@
 
 ## Quick Reference
 
-**Three services:**
-- **moby** — AI brain (cagent serve api, port 8080)
-- **gateway** — Orchestrator (Node.js/Express, port 3000)
-- **tool-gateway** — External tools + browser (Node.js/Playwright, port 8081 MCP + port 3100 admin)
+**Four services:**
+- **moby** - AI brain (cagent serve api, port 8080)
+- **gateway** - Orchestrator (Node.js/Express, port 3000)
+- **tool-gateway** - External tools + browser (Node.js/Playwright, port 8081 MCP + port 3100 admin)
+- **dashboard** - Web UI + task API + maintenance scripts (Python 3.11, port 7777)
+
+**Architecture principle: code vs data.**
+- Code (features, scripts, services) lives in the repo (`/source/`)
+- Data (memory, tasks, schedules, credentials) lives in the user folder (`~/.mobyclaw/`)
+- Rebuilding containers never touches user data
 
 **19 MCP tools** via tool-gateway:
 - 3 quick tools: `browser_fetch`, `browser_search`, `weather_get`
 - 16 browser automation: `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_type`, `browser_fill_form`, `browser_select_option`, `browser_hover`, `browser_press_key`, `browser_scroll`, `browser_back`, `browser_forward`, `browser_wait`, `browser_tabs`, `browser_close`, `browser_eval`
 
 **Key paths:**
-- `~/.mobyclaw/` — All agent state (memory, config, schedules)
-- `/source/` — Project source (mounted in agent container)
-- `/workspace/` — User projects (bind-mounted from host)
+- `~/.mobyclaw/` - User data (memory, tasks, schedules, credentials, config)
+- `/source/` - Project source code (mounted in agent container for self-modification)
+- `/workspace/` - User projects (bind-mounted from host)
 
 **Gateway modules:** index → orchestrator → agent-client → sessions, with scheduler, heartbeat, channels, adapter-registry, and routes as peers.
 

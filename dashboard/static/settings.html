@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mobyclaw - Settings</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', 'SF Pro', -apple-system, sans-serif;
+    background: #0a0e1a; color: #e2e8f0; min-height: 100vh; padding: 1rem;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+  nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 0.8rem; border-bottom: 1px solid #1e293b; align-items: center; }
+  nav a { color: #64748b; text-decoration: none; font-size: 0.85rem; }
+  nav a:hover, nav a.active { color: #38bdf8; }
+  nav .brand { font-weight: 700; color: #38bdf8; font-size: 1.1rem; margin-right: auto; }
+
+  .section { margin-bottom: 1.5rem; }
+  .section h2 {
+    font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.8rem;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    display: flex; align-items: center; gap: 0.4rem;
+  }
+  .card {
+    background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 1.2rem;
+    margin-bottom: 1rem;
+  }
+  .card h3 { font-size: 0.9rem; margin-bottom: 0.6rem; color: #e2e8f0; }
+  .card p { font-size: 0.8rem; color: #64748b; margin-bottom: 0.8rem; }
+
+  textarea, input, select {
+    background: #0a0e1a; border: 1px solid #1e293b; color: #e2e8f0; padding: 0.5rem 0.7rem;
+    border-radius: 6px; font-size: 0.8rem; width: 100%; font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  textarea:focus, input:focus, select:focus { outline: none; border-color: #38bdf8; }
+  textarea { min-height: 300px; resize: vertical; line-height: 1.5; }
+
+  .btn {
+    background: #38bdf8; color: #0a0e1a; border: none; padding: 0.5rem 1.2rem;
+    border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.8rem; transition: all 0.2s;
+  }
+  .btn:hover { background: #7dd3fc; }
+  .btn-ghost { background: transparent; color: #64748b; border: 1px solid #1e293b; }
+  .btn-ghost:hover { border-color: #38bdf8; color: #38bdf8; background: transparent; }
+  .btn-danger { background: #ef4444; }
+  .btn-danger:hover { background: #f87171; }
+  .btn-row { display: flex; gap: 0.5rem; margin-top: 0.8rem; }
+
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+  @media (max-width: 600px) { .info-grid { grid-template-columns: 1fr; } }
+  .info-item { padding: 0.8rem; background: #0d1220; border-radius: 6px; }
+  .info-item .label { font-size: 0.7rem; color: #64748b; text-transform: uppercase; }
+  .info-item .value { font-size: 1rem; font-weight: 600; margin-top: 0.2rem; }
+
+  .toast {
+    position: fixed; bottom: 2rem; right: 2rem; background: #34d399; color: #0a0e1a;
+    padding: 0.6rem 1.2rem; border-radius: 8px; font-weight: 600; font-size: 0.85rem;
+    opacity: 0; transition: opacity 0.3s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+
+  .lesson-list { display: flex; flex-direction: column; gap: 0.4rem; }
+  .lesson-item {
+    background: #0d1220; border-radius: 6px; padding: 0.6rem 0.8rem; font-size: 0.8rem;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;
+  }
+  .lesson-item .cat { font-size: 0.65rem; color: #38bdf8; background: #1e3a5f; padding: 0.1rem 0.4rem; border-radius: 4px; white-space: nowrap; }
+  .severity-info { border-left: 3px solid #38bdf8; }
+  .severity-warning { border-left: 3px solid #fbbf24; }
+  .severity-critical { border-left: 3px solid #ef4444; }
+
+  .conv-list { display: flex; flex-direction: column; gap: 0.4rem; max-height: 400px; overflow-y: auto; }
+  .conv-item {
+    background: #0d1220; border-radius: 6px; padding: 0.6rem 0.8rem; font-size: 0.8rem;
+  }
+  .conv-item .time { font-size: 0.7rem; color: #475569; }
+  .conv-item .topics { margin-top: 0.2rem; }
+  .conv-item .topic { font-size: 0.6rem; color: #38bdf8; background: #1e3a5f; padding: 0.1rem 0.4rem; border-radius: 4px; margin-right: 0.3rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <nav>
+    <span class="brand">🐋 mobyclaw</span>
+    <a href="/">Dashboard</a>
+    <a href="/tasks">Tasks</a>
+    <a href="/settings" class="active">Settings</a>
+  </nav>
+
+  <!-- System Info -->
+  <div class="section">
+    <h2>📊 System Info</h2>
+    <div class="info-grid" id="system-info"></div>
+  </div>
+
+  <!-- Memory Editor -->
+  <div class="section">
+    <h2>🧠 Memory (MEMORY.md)</h2>
+    <div class="card">
+      <p>Edit Agent long-term memory directly. Changes take effect on the next conversation turn.</p>
+      <textarea id="memory-editor" spellcheck="false"></textarea>
+      <div class="btn-row">
+        <button class="btn" onclick="saveMemory()">Save Memory</button>
+        <button class="btn btn-ghost" onclick="loadMemory()">Reload</button>
+        <button class="btn btn-ghost" onclick="compressMemory()">🗜️ Compress (Archive Old)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lessons -->
+  <div class="section">
+    <h2>📚 Lessons Learned</h2>
+    <div class="card">
+      <p>Things the agent has learned from experience. Auto-detected or manually added.</p>
+      <div class="lesson-list" id="lessons-list"></div>
+      <div class="btn-row" style="margin-top:0.8rem">
+        <input type="text" id="new-lesson" placeholder="Add a new lesson..." style="flex:1">
+        <select id="lesson-cat" style="width:auto">
+          <option value="general">General</option>
+          <option value="technical">Technical</option>
+          <option value="user-preference">User Pref</option>
+          <option value="workflow">Workflow</option>
+          <option value="error">Error</option>
+        </select>
+        <button class="btn btn-sm" onclick="addLesson()">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Conversations Index -->
+  <div class="section">
+    <h2>💬 Conversation Index</h2>
+    <div class="card">
+      <p>Indexed conversation summaries for topic-based recall.</p>
+      <input type="text" id="conv-search" placeholder="Search conversations by topic..." style="margin-bottom:0.8rem" oninput="searchConvs(this.value)">
+      <div class="conv-list" id="conv-list"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+async function loadSystemInfo() {
+  const resp = await fetch('/api/status');
+  const data = await resp.json();
+  const el = document.getElementById('system-info');
+  
+  const upH = Math.floor(data.uptime_seconds / 3600);
+  const upM = Math.floor((data.uptime_seconds % 3600) / 60);
+  const tasks = data.tasks || {};
+  
+  el.innerHTML = `
+    <div class="info-item"><div class="label">Status</div><div class="value" style="color:#34d399">● Online</div></div>
+    <div class="info-item"><div class="label">Uptime</div><div class="value">${upH}h ${upM}m</div></div>
+    <div class="info-item"><div class="label">Tasks</div><div class="value">${data.total_tasks || 0} total</div></div>
+    <div class="info-item"><div class="label">Conversations</div><div class="value">${data.conversations_indexed || 0} indexed</div></div>
+    <div class="info-item"><div class="label">Lessons</div><div class="value">${data.lessons_learned || 0} learned</div></div>
+    <div class="info-item"><div class="label">Last Updated</div><div class="value" style="font-size:0.75rem">${data.timestamp}</div></div>
+  `;
+}
+
+async function loadMemory() {
+  const resp = await fetch('/api/memory');
+  const data = await resp.json();
+  document.getElementById('memory-editor').value = data.content || '';
+}
+
+async function saveMemory() {
+  const content = document.getElementById('memory-editor').value;
+  await fetch('/api/memory', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ content })
+  });
+  toast('Memory saved!');
+}
+
+async function compressMemory() {
+  const resp = await fetch('/api/memory/compress', { method: 'POST' });
+  const data = await resp.json();
+  toast(`Archived ${data.archived} completed tasks`);
+  loadMemory();
+}
+
+async function loadLessons() {
+  const resp = await fetch('/api/lessons');
+  const lessons = await resp.json();
+  const el = document.getElementById('lessons-list');
+  
+  if (!lessons.length) {
+    el.innerHTML = '<div style="color:#475569;font-size:0.8rem;padding:1rem;text-align:center">No lessons recorded yet</div>';
+    return;
+  }
+  
+  el.innerHTML = lessons.map(l => `
+    <div class="lesson-item severity-${l.severity}">
+      <span>${esc(l.lesson)}</span>
+      <span class="cat">${l.category}</span>
+    </div>
+  `).join('');
+}
+
+async function addLesson() {
+  const lesson = document.getElementById('new-lesson').value.trim();
+  if (!lesson) return;
+  const category = document.getElementById('lesson-cat').value;
+  
+  await fetch('/api/lessons', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ lesson, category, severity: 'info' })
+  });
+  
+  document.getElementById('new-lesson').value = '';
+  toast('Lesson added!');
+  loadLessons();
+}
+
+async function loadConvs() {
+  const resp = await fetch('/api/conversations');
+  const convs = await resp.json();
+  renderConvs(convs);
+}
+
+async function searchConvs(query) {
+  if (!query) { loadConvs(); return; }
+  const resp = await fetch(`/api/conversations?q=${encodeURIComponent(query)}`);
+  const convs = await resp.json();
+  renderConvs(convs);
+}
+
+function renderConvs(convs) {
+  const el = document.getElementById('conv-list');
+  if (!convs.length) {
+    el.innerHTML = '<div style="color:#475569;font-size:0.8rem;padding:1rem;text-align:center">No conversations indexed yet</div>';
+    return;
+  }
+  el.innerHTML = convs.map(c => {
+    const topics = JSON.parse(c.topics || '[]');
+    return `
+      <div class="conv-item">
+        <div class="time">${new Date(c.timestamp).toLocaleString()} - ${c.channel || 'unknown'} (${c.message_count} msgs)</div>
+        <div>${esc(c.summary)}</div>
+        <div class="topics">${topics.map(t => `<span class="topic">${esc(t)}</span>`).join('')}</div>
+      </div>`;
+  }).join('');
+}
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
+
+// Init
+loadSystemInfo();
+loadMemory();
+loadLessons();
+loadConvs();
+</script>
+</body>
+</html>

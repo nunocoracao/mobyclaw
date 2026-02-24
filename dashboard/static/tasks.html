@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mobyclaw - Tasks</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', 'SF Pro', -apple-system, sans-serif;
+    background: #0a0e1a; color: #e2e8f0; min-height: 100vh; padding: 1rem;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+
+  /* Nav */
+  nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 0.8rem; border-bottom: 1px solid #1e293b; align-items: center; }
+  nav a { color: #64748b; text-decoration: none; font-size: 0.85rem; }
+  nav a:hover, nav a.active { color: #38bdf8; }
+  nav .brand { font-weight: 700; color: #38bdf8; font-size: 1.1rem; margin-right: auto; }
+
+  /* Filters */
+  .filters { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  .filters button {
+    background: #111827; border: 1px solid #1e293b; color: #94a3b8; padding: 0.3rem 0.8rem;
+    border-radius: 6px; cursor: pointer; font-size: 0.75rem; transition: all 0.2s;
+  }
+  .filters button:hover, .filters button.active { background: #1e293b; color: #38bdf8; border-color: #38bdf8; }
+  .filters .count { background: #1e3a5f; color: #38bdf8; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.65rem; margin-left: 0.3rem; }
+
+  /* Stats bar */
+  .stats-bar { display: flex; gap: 1rem; margin-bottom: 1.2rem; }
+  .stat-chip {
+    background: #111827; border: 1px solid #1e293b; border-radius: 6px; padding: 0.4rem 0.8rem;
+    font-size: 0.75rem; display: flex; align-items: center; gap: 0.4rem;
+  }
+  .stat-chip .num { font-weight: 700; font-size: 1rem; }
+  .green { color: #34d399; } .blue { color: #38bdf8; } .amber { color: #fbbf24; } .red { color: #ef4444; } .gray { color: #64748b; }
+
+  /* Task list */
+  .task-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .task-card {
+    background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 0.8rem 1rem;
+    display: flex; align-items: flex-start; gap: 0.8rem; transition: all 0.2s; cursor: pointer;
+  }
+  .task-card:hover { border-color: #334155; background: #0f172a; }
+  .task-card.done { opacity: 0.5; }
+  .task-card.in_progress { border-left: 3px solid #38bdf8; }
+  .task-card.failed { border-left: 3px solid #ef4444; }
+
+  .task-check {
+    width: 20px; height: 20px; border-radius: 50%; border: 2px solid #334155;
+    flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    margin-top: 2px; transition: all 0.2s;
+  }
+  .task-check:hover { border-color: #34d399; }
+  .task-check.checked { background: #34d399; border-color: #34d399; }
+  .task-check.checked::after { content: '✓'; color: #0a0e1a; font-size: 0.7rem; font-weight: 700; }
+
+  .task-content { flex: 1; min-width: 0; }
+  .task-title { font-size: 0.85rem; font-weight: 500; margin-bottom: 0.2rem; }
+  .task-card.done .task-title { text-decoration: line-through; color: #475569; }
+  .task-meta { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .task-meta span { font-size: 0.7rem; color: #475569; }
+
+  .badge {
+    display: inline-block; padding: 0.1rem 0.4rem; border-radius: 4px;
+    font-size: 0.65rem; font-weight: 600; text-transform: uppercase;
+  }
+  .badge-critical { background: #450a0a; color: #ef4444; }
+  .badge-high { background: #451a03; color: #f59e0b; }
+  .badge-medium { background: #1e293b; color: #94a3b8; }
+  .badge-low { background: #0f172a; color: #475569; }
+
+  .tag { background: #1e3a5f; color: #38bdf8; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.6rem; }
+
+  /* New task form */
+  .new-task {
+    background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  .new-task input, .new-task select, .new-task textarea {
+    background: #0a0e1a; border: 1px solid #1e293b; color: #e2e8f0; padding: 0.5rem 0.7rem;
+    border-radius: 6px; font-size: 0.8rem; width: 100%; margin-bottom: 0.5rem; font-family: inherit;
+  }
+  .new-task input:focus, .new-task select:focus, .new-task textarea:focus {
+    outline: none; border-color: #38bdf8;
+  }
+  .form-row { display: flex; gap: 0.5rem; }
+  .form-row > * { flex: 1; }
+  .btn {
+    background: #38bdf8; color: #0a0e1a; border: none; padding: 0.5rem 1.2rem;
+    border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.8rem; transition: all 0.2s;
+  }
+  .btn:hover { background: #7dd3fc; }
+  .btn-sm { padding: 0.25rem 0.6rem; font-size: 0.7rem; }
+  .btn-ghost { background: transparent; color: #64748b; border: 1px solid #1e293b; }
+  .btn-ghost:hover { border-color: #38bdf8; color: #38bdf8; background: transparent; }
+  .btn-danger { background: #ef4444; }
+  .btn-danger:hover { background: #f87171; }
+
+  /* Empty state */
+  .empty { text-align: center; padding: 3rem; color: #475569; }
+  .empty .icon { font-size: 2rem; margin-bottom: 0.5rem; }
+
+  /* Task detail modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    z-index: 100; align-items: center; justify-content: center; padding: 1rem;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: #111827; border: 1px solid #1e293b; border-radius: 12px;
+    width: 100%; max-width: 550px; max-height: 80vh; overflow-y: auto; padding: 1.5rem;
+  }
+  .modal h2 { font-size: 1rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
+  .modal .close { cursor: pointer; color: #64748b; font-size: 1.2rem; background: none; border: none; }
+  .modal .close:hover { color: #e2e8f0; }
+  .modal .field { margin-bottom: 0.8rem; }
+  .modal .field label { display: block; font-size: 0.7rem; color: #64748b; text-transform: uppercase; margin-bottom: 0.3rem; }
+  .modal .history { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #1e293b; }
+  .modal .history-item { font-size: 0.7rem; color: #475569; padding: 0.2rem 0; }
+
+  @media (max-width: 600px) {
+    .form-row { flex-direction: column; }
+    .stats-bar { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <nav>
+    <span class="brand">🐋 mobyclaw</span>
+    <a href="/">Dashboard</a>
+    <a href="/tasks" class="active">Tasks</a>
+    <a href="/settings">Settings</a>
+  </nav>
+
+  <!-- Stats -->
+  <div class="stats-bar" id="stats-bar"></div>
+
+  <!-- New Task -->
+  <div class="new-task">
+    <input type="text" id="new-title" placeholder="What needs to be done?" autocomplete="off">
+    <div class="form-row">
+      <select id="new-priority">
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+        <option value="critical">Critical</option>
+      </select>
+      <input type="text" id="new-tags" placeholder="Tags (comma separated)">
+      <button class="btn" onclick="createTask()">Add Task</button>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filters" id="filters"></div>
+
+  <!-- Task List -->
+  <div class="task-list" id="task-list"></div>
+
+  <!-- Detail Modal -->
+  <div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+    <div class="modal" id="modal-content"></div>
+  </div>
+</div>
+
+<script>
+let tasks = [];
+let currentFilter = 'all';
+
+async function fetchTasks() {
+  const resp = await fetch('/api/tasks');
+  tasks = await resp.json();
+  render();
+  fetchStats();
+}
+
+async function fetchStats() {
+  const resp = await fetch('/api/tasks/stats');
+  const stats = await resp.json();
+  const bar = document.getElementById('stats-bar');
+  const s = stats.by_status || {};
+  bar.innerHTML = `
+    <div class="stat-chip"><span class="num blue">${(s.todo||0) + (s.in_progress||0)}</span> Open</div>
+    <div class="stat-chip"><span class="num amber">${s.in_progress||0}</span> In Progress</div>
+    <div class="stat-chip"><span class="num green">${s.done||0}</span> Done</div>
+    <div class="stat-chip"><span class="num red">${s.failed||0}</span> Failed</div>
+    <div class="stat-chip"><span class="num red">${stats.overdue||0}</span> Overdue</div>
+  `;
+}
+
+function render() {
+  // Filters
+  const filterDiv = document.getElementById('filters');
+  const counts = { all: tasks.length };
+  tasks.forEach(t => { counts[t.status] = (counts[t.status]||0) + 1; });
+  
+  filterDiv.innerHTML = ['all','todo','in_progress','done','failed','cancelled'].map(f => 
+    `<button class="${currentFilter===f?'active':''}" onclick="setFilter('${f}')">${f.replace('_',' ')}<span class="count">${counts[f]||0}</span></button>`
+  ).join('');
+
+  // Tasks
+  const list = document.getElementById('task-list');
+  const filtered = currentFilter === 'all' ? tasks : tasks.filter(t => t.status === currentFilter);
+  
+  if (!filtered.length) {
+    list.innerHTML = `<div class="empty"><div class="icon">📋</div>No tasks${currentFilter!=='all'?' with this status':''}</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(t => {
+    const tags = JSON.parse(t.tags || '[]');
+    const isDone = t.status === 'done' || t.status === 'cancelled';
+    return `
+      <div class="task-card ${t.status}" onclick="showDetail('${t.id}')">
+        <div class="task-check ${isDone?'checked':''}" onclick="event.stopPropagation();toggleDone('${t.id}','${t.status}')">
+        </div>
+        <div class="task-content">
+          <div class="task-title">${esc(t.title)}</div>
+          <div class="task-meta">
+            <span class="badge badge-${t.priority}">${t.priority}</span>
+            ${tags.map(tg => `<span class="tag">${esc(tg)}</span>`).join('')}
+            ${t.due_date ? `<span>📅 ${new Date(t.due_date).toLocaleDateString()}</span>` : ''}
+            <span>${timeAgo(t.created_at)}</span>
+            ${t.retry_count > 0 ? `<span class="red">↻${t.retry_count}</span>` : ''}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function setFilter(f) { currentFilter = f; render(); }
+
+async function createTask() {
+  const title = document.getElementById('new-title').value.trim();
+  if (!title) return;
+  const priority = document.getElementById('new-priority').value;
+  const tagsStr = document.getElementById('new-tags').value.trim();
+  const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
+  
+  await fetch('/api/tasks', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ title, priority, tags })
+  });
+  
+  document.getElementById('new-title').value = '';
+  document.getElementById('new-tags').value = '';
+  fetchTasks();
+}
+
+async function toggleDone(id, current) {
+  const newStatus = (current === 'done') ? 'todo' : 'done';
+  await fetch(`/api/tasks/${id}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ status: newStatus })
+  });
+  fetchTasks();
+}
+
+async function showDetail(id) {
+  const resp = await fetch(`/api/tasks/${id}`);
+  const task = await resp.json();
+  const tags = JSON.parse(task.tags || '[]');
+  
+  document.getElementById('modal-content').innerHTML = `
+    <h2>${esc(task.title)} <button class="close" onclick="closeModal()">✕</button></h2>
+    <div class="field"><label>Status</label>
+      <select onchange="updateField('${id}','status',this.value)">
+        ${['todo','in_progress','done','failed','cancelled'].map(s => 
+          `<option value="${s}" ${task.status===s?'selected':''}>${s.replace('_',' ')}</option>`
+        ).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Priority</label>
+      <select onchange="updateField('${id}','priority',this.value)">
+        ${['low','medium','high','critical'].map(p => 
+          `<option value="${p}" ${task.priority===p?'selected':''}>${p}</option>`
+        ).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Description</label>
+      <textarea rows="3" onblur="updateField('${id}','description',this.value)">${esc(task.description||'')}</textarea>
+    </div>
+    <div class="field"><label>Tags</label>
+      <input type="text" value="${tags.join(', ')}" onblur="updateField('${id}','tags',this.value.split(',').map(t=>t.trim()).filter(Boolean))">
+    </div>
+    <div class="field"><label>Due Date</label>
+      <input type="datetime-local" value="${task.due_date?task.due_date.slice(0,16):''}" onchange="updateField('${id}','due_date',this.value?new Date(this.value).toISOString():null)">
+    </div>
+    <div style="display:flex;gap:0.5rem;margin-top:1rem">
+      ${task.status==='failed'?`<button class="btn btn-sm" onclick="retryTask('${id}')">↻ Retry</button>`:''}
+      <button class="btn btn-sm btn-danger" onclick="deleteTask('${id}')">Delete</button>
+    </div>
+    ${task.last_error ? `<div class="field" style="margin-top:1rem"><label>Last Error</label><div style="color:#ef4444;font-size:0.75rem">${esc(task.last_error)}</div></div>` : ''}
+    <div class="history">
+      <label style="font-size:0.7rem;color:#64748b;text-transform:uppercase">History</label>
+      ${(task.history||[]).map(h => 
+        `<div class="history-item">${new Date(h.timestamp).toLocaleString()} - ${esc(h.action)}</div>`
+      ).join('')}
+    </div>
+  `;
+  document.getElementById('modal').classList.add('show');
+}
+
+async function updateField(id, field, value) {
+  await fetch(`/api/tasks/${id}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ [field]: value })
+  });
+  fetchTasks();
+}
+
+async function retryTask(id) {
+  await fetch(`/api/tasks/${id}/retry`, { method: 'POST' });
+  closeModal();
+  fetchTasks();
+}
+
+async function deleteTask(id) {
+  if (!confirm('Delete this task?')) return;
+  await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+  closeModal();
+  fetchTasks();
+}
+
+function closeModal() { document.getElementById('modal').classList.remove('show'); }
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function timeAgo(iso) {
+  const s = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+
+// Enter key to create
+document.getElementById('new-title').addEventListener('keydown', e => { if (e.key === 'Enter') createTask(); });
+
+fetchTasks();
+setInterval(fetchTasks, 30000);
+</script>
+</body>
+</html>

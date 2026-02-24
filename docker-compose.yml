@@ -5,6 +5,7 @@
 #   moby          — AI agent (cagent serve api)
 #   gateway       — Message routing (Telegram, etc.)
 #   tool-gateway  — MCP tool aggregator (browser, weather, etc.)
+#   dashboard     — Web dashboard + Task API + Tunnel
 #
 # Usage:
 #   mobyclaw up    — start everything
@@ -75,6 +76,30 @@ services:
     restart: unless-stopped
     networks:
       - mobyclaw
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "7777:7777"
+    volumes:
+      - ${MOBYCLAW_HOME:-~/.mobyclaw}:/data/.mobyclaw
+    environment:
+      - MOBYCLAW_DATA=/data/.mobyclaw
+      - DASHBOARD_PORT=7777
+      - GATEWAY_URL=http://gateway:3000
+      - ENABLE_TUNNEL=${ENABLE_TUNNEL:-false}
+    depends_on:
+      - gateway
+    restart: unless-stopped
+    networks:
+      - mobyclaw
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.25"
 
 networks:
   mobyclaw:

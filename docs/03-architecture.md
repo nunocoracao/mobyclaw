@@ -40,29 +40,47 @@
 │  │  │  :8080 (cagent HTTP API)       │     │  :8081 MCP          │   ││
 │  │  └─────┬──────────────────┬───────┘     │  :3100 Admin        │   ││
 │  │        │                  │             └─────────────────────┘   ││
-│  │   ~/.mobyclaw/       /source                                       ││
-│  │   (bind mount)      (bind mount)                                   ││
-│  │   memory, tasks     self-modification                              ││
-│  │        │                  │                                        ││
-│  │   /workspace/*                                                     ││
-│  │   User projects (bind mounts from workspaces.conf)                 ││
+│  │                                                                    ││
+│  │  ┌────────────────────────────────┐                                ││
+│  │  │           dashboard            │                                ││
+│  │  │    (web UI + task API +        │                                ││
+│  │  │     maintenance scripts)       │                                ││
+│  │  │                                │                                ││
+│  │  │  📊 Status dashboard           │                                ││
+│  │  │  📋 Task API (SQLite)          │                                ││
+│  │  │  🔧 Self-heal + boot scripts   │                                ││
+│  │  │  🔗 Cloudflare tunnel          │                                ││
+│  │  │  :7777 HTTP                    │                                ││
+│  │  └────────────────────────────────┘                                ││
+│  │                                                                    ││
+│  │   Bind mounts:                                                     ││
+│  │   ~/.mobyclaw/ ── user data (memory, tasks, schedules, credentials)││
+│  │   /source/     ── code (self-modification by moby only)            ││
+│  │   /workspace/* ── user projects (from workspaces.conf)             ││
 │  └───────────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Container Roles
 
-The stack is **3 services:**
+The stack is **4 services:**
 
 | Container | Role | Technology |
 |---|---|---|
-| **gateway** | Orchestrator — messaging adapters, sessions, heartbeat, scheduler, REST API | Node.js (Express) |
-| **moby** | AI brain — runs cagent, receives prompts, executes tools (shell, filesystem, fetch, MCP) | cagent serve api |
-| **tool-gateway** | External tools — headless browser (Playwright), web search, fetch, weather via MCP | Node.js + Playwright + Chromium |
+| **gateway** | Orchestrator - messaging adapters, sessions, heartbeat, scheduler, REST API | Node.js (Express) |
+| **moby** | AI brain - runs cagent, receives prompts, executes tools (shell, filesystem, fetch, MCP) | cagent serve api |
+| **tool-gateway** | External tools - headless browser (Playwright), web search, fetch, weather via MCP | Node.js + Playwright + Chromium |
+| **dashboard** | Web dashboard, task API (SQLite), maintenance scripts, Cloudflare tunnel | Python 3.11 + cloudflared |
+
+**Key principle: code vs data separation.**
+All service code (including scripts, dashboards, and maintenance logic) lives in the repo.
+All user-specific data (memory, tasks, schedules, credentials) lives in `~/.mobyclaw/`.
+Containers read/write user data via bind-mounted volumes but never store code in the user folder.
 
 **Evolution:** The original architecture planned 4 containers (moby, gateway, workspace MCP, memory MCP).
 In practice, cagent's built-in tools (shell, filesystem, fetch) handle workspace and memory directly.
-The tool-gateway was added later for external web services and browser automation.
+The tool-gateway was added for external web services and browser automation.
+The dashboard was added as a 4th service for web UI, task tracking, and maintenance scripts.
 
 ### MCP Tool Bridge
 
@@ -117,18 +135,25 @@ Messaging platforms are **adapters inside the gateway**, not separate containers
                        │     │             │ Playwright +  │
               bind mounts:   │             │ Chromium      │
               ~/.mobyclaw/    /source       └───────────────┘
-              /workspace/*   (self-modification)
+              /workspace/*   (self-mod)
+
+                    ┌───────────────┐
+                    │   dashboard   │  web UI, task API, maintenance
+                    │   :7777       │  reads/writes ~/.mobyclaw/ data
+                    └───────────────┘
 ```
 
 **Connection protocols:**
 
-| From → To | Protocol | How |
+| From -> To | Protocol | How |
 |---|---|---|
-| gateway → moby | HTTP + SSE | POST to cagent's `/api/sessions/{id}/agent/{name}`, streams response via SSE |
-| moby → tool-gateway | MCP (stdio↔HTTP) | mcp-bridge bridges cagent's stdio MCP to tool-gateway's Streamable HTTP |
-| moby → filesystem | Direct | cagent's built-in tools read/write bind-mounted dirs (~/.mobyclaw/, /workspace/, /source) |
-| CLI → gateway | HTTP + SSE | `mobyclaw run` / `mobyclaw chat` hit gateway's `/prompt/stream` endpoint |
-| agent → gateway | HTTP | Agent calls gateway API via curl (e.g., `POST /api/schedules`, `POST /api/deliver`) |
+| gateway -> moby | HTTP + SSE | POST to cagent's `/api/sessions/{id}/agent/{name}`, streams response via SSE |
+| moby -> tool-gateway | MCP (stdio-to-HTTP) | mcp-bridge bridges cagent's stdio MCP to tool-gateway's Streamable HTTP |
+| moby -> filesystem | Direct | cagent's built-in tools read/write bind-mounted dirs (~/.mobyclaw/, /workspace/, /source) |
+| moby -> dashboard | HTTP | Agent calls dashboard API via curl (e.g., `GET /api/tasks`, `POST /api/memory/compress`) |
+| moby -> gateway | HTTP | Agent calls gateway API via curl (e.g., `POST /api/schedules`, `POST /api/deliver`) |
+| CLI -> gateway | HTTP + SSE | `mobyclaw run` / `mobyclaw chat` hit gateway's `/prompt/stream` endpoint |
+| dashboard -> filesystem | Direct | Dashboard reads/writes `~/.mobyclaw/` data via bind mount |
 
 ### Runtime Modes (cagent)
 

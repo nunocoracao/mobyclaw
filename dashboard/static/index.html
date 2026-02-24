@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mobyclaw - Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', 'SF Pro', -apple-system, sans-serif;
+    background: #0a0e1a; color: #e2e8f0; min-height: 100vh; padding: 1.5rem;
+  }
+  .container { max-width: 1000px; margin: 0 auto; }
+  nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 0.8rem; border-bottom: 1px solid #1e293b; align-items: center; }
+  nav a { color: #64748b; text-decoration: none; font-size: 0.85rem; }
+  nav a:hover, nav a.active { color: #38bdf8; }
+  nav .brand { font-weight: 700; color: #38bdf8; font-size: 1.1rem; margin-right: auto; }
+  nav .live { color: #34d399; font-size: 0.75rem; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8rem; margin-bottom: 1.5rem; }
+  .stat {
+    background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 1rem;
+  }
+  .stat .label { color: #64748b; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat .value { font-size: 1.6rem; font-weight: 700; margin-top: 0.2rem; }
+  .stat .sub { color: #475569; font-size: 0.7rem; margin-top: 0.15rem; }
+  .green { color: #34d399; } .blue { color: #38bdf8; } .amber { color: #fbbf24; } .red { color: #ef4444; }
+
+  .section { margin-bottom: 1.5rem; }
+  .section h2 {
+    font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.6rem;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+
+  table { width: 100%; border-collapse: collapse; background: #111827; border-radius: 8px; overflow: hidden; border: 1px solid #1e293b; }
+  th, td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid #1e293b; font-size: 0.8rem; }
+  th { color: #64748b; font-size: 0.7rem; text-transform: uppercase; background: #0d1220; }
+  td code { background: #1e293b; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.75rem; color: #38bdf8; }
+
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
+  .badge-todo { background: #1e293b; color: #94a3b8; }
+  .badge-in_progress { background: #1e3a5f; color: #38bdf8; }
+  .badge-done { background: #064e3b; color: #34d399; }
+  .badge-failed { background: #450a0a; color: #ef4444; }
+  .badge-cancelled { background: #1e293b; color: #475569; }
+
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+  .dot.green { background: #34d399; } .dot.red { background: #ef4444; }
+  .dot.pulse { animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+
+  .info-list { list-style: none; padding: 0; }
+  .info-list li {
+    background: #111827; border: 1px solid #1e293b; border-radius: 6px;
+    padding: 0.5rem 0.7rem; margin-bottom: 0.4rem; font-size: 0.8rem;
+  }
+
+  .tunnel-banner {
+    background: #064e3b; border: 1px solid #34d399; border-radius: 8px;
+    padding: 0.8rem 1rem; margin-bottom: 1.5rem; font-size: 0.85rem;
+    display: none;
+  }
+  .tunnel-banner a { color: #34d399; }
+  .tunnel-banner.show { display: block; }
+
+  .footer { text-align: center; color: #334155; font-size: 0.7rem; padding-top: 1.5rem; border-top: 1px solid #1e293b; margin-top: 1rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <nav>
+    <span class="brand">🐋 mobyclaw</span>
+    <a href="/" class="active">Dashboard</a>
+    <a href="/tasks">Tasks</a>
+    <a href="/settings">Settings</a>
+    <span class="live"><span class="dot green pulse"></span>Live</span>
+  </nav>
+
+  <div class="tunnel-banner" id="tunnel-banner">
+    🔗 Public URL: <a id="tunnel-url" href="#" target="_blank"></a>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="two-col">
+    <div class="section">
+      <h2>📋 Recent Tasks</h2>
+      <table>
+        <thead><tr><th>Task</th><th>Status</th><th>Priority</th></tr></thead>
+        <tbody id="recent-tasks"></tbody>
+      </table>
+    </div>
+    <div class="section">
+      <h2>📚 Recent Lessons</h2>
+      <ul class="info-list" id="recent-lessons"></ul>
+    </div>
+  </div>
+
+  <div class="footer">
+    🐋 mobyclaw Dashboard | Auto-refreshes every 30s
+  </div>
+</div>
+
+<script>
+async function load() {
+  // Status
+  const status = await (await fetch('/api/status')).json();
+  const tasks = status.tasks || {};
+  const open = (tasks.todo || 0) + (tasks.in_progress || 0);
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="label">Status</div><div class="value green"><span class="dot green pulse"></span>Online</div></div>
+    <div class="stat"><div class="label">Tasks</div><div class="value blue">${status.total_tasks || 0}</div><div class="sub">${open} open, ${tasks.done||0} done</div></div>
+    <div class="stat"><div class="label">Conversations</div><div class="value blue">${status.conversations_indexed || 0}</div><div class="sub">indexed</div></div>
+    <div class="stat"><div class="label">Lessons</div><div class="value amber">${status.lessons_learned || 0}</div><div class="sub">learned</div></div>
+    <div class="stat"><div class="label">Memory</div><div class="value" style="font-size:1rem;color:#94a3b8">${Math.round(status.memory_size/1024)}KB</div><div class="sub">${status.memory_lines} lines</div></div>
+  `;
+
+  if (status.tunnel_url) {
+    document.getElementById('tunnel-url').href = status.tunnel_url;
+    document.getElementById('tunnel-url').textContent = status.tunnel_url;
+    document.getElementById('tunnel-banner').classList.add('show');
+  }
+
+  // Recent tasks
+  const allTasks = await (await fetch('/api/tasks')).json();
+  const tbody = document.getElementById('recent-tasks');
+  const recent = allTasks.slice(0, 8);
+  tbody.innerHTML = recent.length ? recent.map(t => `
+    <tr>
+      <td>${esc(t.title)}</td>
+      <td><span class="badge badge-${t.status}">${t.status.replace('_',' ')}</span></td>
+      <td>${t.priority}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="3" style="color:#475569;text-align:center">No tasks yet</td></tr>';
+
+  // Lessons
+  const lessons = await (await fetch('/api/lessons')).json();
+  const lessonList = document.getElementById('recent-lessons');
+  const recentLessons = lessons.slice(0, 6);
+  lessonList.innerHTML = recentLessons.length ? recentLessons.map(l =>
+    `<li>${esc(l.lesson)}</li>`
+  ).join('') : '<li style="color:#475569;text-align:center">No lessons yet</li>';
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

@@ -84,7 +84,7 @@ Phase 1 is **one container**. moby has `~/.mobyclaw/` bind-mounted and uses
 cagent's built-in filesystem tools to read/write memory directly. No separate
 memory or workspace services yet.
 
-### 8.2 Phase 2 — Full Stack with Gateway
+### 8.2 Phase 2 - Full Stack (4 services)
 
 ```yaml
 services:
@@ -93,12 +93,11 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ./agents/moby:/agent:ro
       - ${MOBYCLAW_HOME:-~/.mobyclaw}:/home/agent/.mobyclaw
-    env_file:
-      - .env
+      - ${MOBYCLAW_HOME:-~/.mobyclaw}/gh:/home/agent/.config/gh
+      - .:/source
     environment:
-      - ANTHROPIC_API_KEY         # LLM keys only
+      - ANTHROPIC_API_KEY
       - OPENAI_API_KEY
     restart: unless-stopped
     networks:
@@ -112,16 +111,52 @@ services:
       - "3000:3000"
     volumes:
       - ${MOBYCLAW_HOME:-~/.mobyclaw}:/data/.mobyclaw
-    env_file:
-      - .env
     environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
-      - WHATSAPP_AUTH=${WHATSAPP_AUTH:-}
-      - MOBYCLAW_HEARTBEAT_INTERVAL=${MOBYCLAW_HEARTBEAT_INTERVAL:-30m}
+      - AGENT_URL=http://moby:8080
+      - MOBYCLAW_HOME=/data/.mobyclaw
+      - TELEGRAM_BOT_TOKEN
+      - TELEGRAM_ALLOWED_USERS
+      - MOBYCLAW_HEARTBEAT_INTERVAL=${MOBYCLAW_HEARTBEAT_INTERVAL:-15m}
+      - MOBYCLAW_ACTIVE_HOURS=${MOBYCLAW_ACTIVE_HOURS:-07:00-23:00}
     depends_on:
       - moby
+    restart: unless-stopped
+    networks:
+      - mobyclaw
+
+  tool-gateway:
+    build:
+      context: ./tool-gateway
+      dockerfile: Dockerfile
+    expose:
+      - "8081"
+    ports:
+      - "3100:3100"
+    volumes:
+      - ${MOBYCLAW_HOME:-~/.mobyclaw}:/data/.mobyclaw
+    environment:
+      - MCP_PORT=8081
+      - ADMIN_PORT=3100
+      - AUTH_STORE_PATH=/data/.mobyclaw/tool-auth
+    restart: unless-stopped
+    networks:
+      - mobyclaw
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "7777:7777"
+    volumes:
+      - ${MOBYCLAW_HOME:-~/.mobyclaw}:/data/.mobyclaw
+    environment:
+      - MOBYCLAW_DATA=/data/.mobyclaw
+      - DASHBOARD_PORT=7777
+      - GATEWAY_URL=http://gateway:3000
+      - ENABLE_TUNNEL=${ENABLE_TUNNEL:-false}
+    depends_on:
+      - gateway
     restart: unless-stopped
     networks:
       - mobyclaw
@@ -130,3 +165,13 @@ networks:
   mobyclaw:
     driver: bridge
 ```
+
+**4 services, 1 data directory.** All services mount `~/.mobyclaw/` for data access.
+Code lives in each service's Docker image. Data lives in the shared bind mount.
+
+| Service | Port | Reads from ~/.mobyclaw/ | Writes to ~/.mobyclaw/ |
+|---|---|---|---|
+| moby | 8080 | soul.yaml, MEMORY.md, TASKS.md | MEMORY.md, TASKS.md, daily logs |
+| gateway | 3000 | schedules.json, channels.json | schedules.json, channels.json |
+| tool-gateway | 8081, 3100 | tool-auth/ | tool-auth/ |
+| dashboard | 7777 | MEMORY.md, LESSONS.md, data/ | BOOT.md, data/tasks.db |

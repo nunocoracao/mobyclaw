@@ -8,7 +8,7 @@
 
 Mobyclaw is a long-lived personal AI agent that runs in Docker containers.
 You deploy it, connect your messaging apps, and it becomes your always-on AI
-companion — with persistent memory, a personality, and the ability to take
+companion - with persistent memory, a personality, and the ability to take
 action on your behalf.
 
 **One command to start. Remembers everything. Always running.**
@@ -23,20 +23,22 @@ action on your behalf.
 
 ## Features
 
-- **Always on** — runs as a Docker Compose stack, restarts automatically
-- **Persistent memory** — remembers who you are, what you've discussed, your preferences (plain Markdown files you can read and edit)
-- **Chat via Telegram** — streaming responses with real-time tool status indicators
-- **CLI chat** — interactive terminal sessions and one-shot prompts
-- **Web browsing** — full headless browser (Playwright + Chromium) for navigating pages, filling forms, creating accounts, taking screenshots
-- **Web search & reading** — search the web via DuckDuckGo, fetch and extract clean text from any URL
-- **Weather** — current conditions and forecasts for any location
-- **Scheduling & reminders** — set reminders, recurring tasks, and timed notifications
-- **Proactive heartbeat** — wakes itself up periodically to check on tasks and notify you
-- **Workspace access** — mount your project folders so the agent can read and edit your actual code
-- **Service credentials** — authenticate GitHub via OAuth, add AWS keys, etc. and it uses CLIs on your behalf
-- **Self-modifying** — can edit its own config, personality, and even source code, then trigger rebuilds
-- **Auto-backup** — scheduled backups of agent state to a private GitHub repo
-- **Your machine, your data** — runs locally, no SaaS, your API keys
+- **Always on** - runs as a Docker Compose stack, restarts automatically
+- **Persistent memory** - remembers who you are, what you've discussed, your preferences (plain Markdown files you can read and edit)
+- **Chat via Telegram** - streaming responses with real-time tool status indicators
+- **CLI chat** - interactive terminal sessions and one-shot prompts
+- **Web dashboard** - status overview, task management, settings (with optional Cloudflare tunnel for remote access)
+- **Web browsing** - full headless browser (Playwright + Chromium) for navigating pages, filling forms, creating accounts, taking screenshots
+- **Web search & reading** - search the web via DuckDuckGo, fetch and extract clean text from any URL
+- **Weather** - current conditions and forecasts for any location
+- **Scheduling & reminders** - set reminders, recurring tasks, and timed notifications
+- **Proactive heartbeat** - wakes itself up periodically to check on tasks and notify you
+- **Workspace access** - mount your project folders so the agent can read and edit your actual code
+- **Service credentials** - authenticate GitHub via OAuth, add AWS keys, etc. and it uses CLIs on your behalf
+- **Self-modifying** - can edit its own config, personality, and even source code, then trigger rebuilds
+- **Self-healing** - automatic health checks and recovery on boot
+- **Auto-backup** - scheduled backups of agent state to a private GitHub repo
+- **Your machine, your data** - runs locally, no SaaS, your API keys
 
 ---
 
@@ -58,33 +60,38 @@ action on your behalf.
 │  └──────────────────┘            │  MCP bridge ────┼──┐          │
 │                                   └─────────────────┘  │          │
 │                                                        │ MCP      │
-│                                  ┌─────────────────┐   │          │
-│                                  │  tool-gateway    │◀──┘          │
-│                                  │  (Node.js)      │             │
-│                                  │                 │             │
-│                                  │  🌐 Browser     │             │
-│                                  │  🔍 Search      │             │
-│                                  │  📄 Fetch       │             │
-│                                  │  🌤️ Weather     │             │
-│                                  │  🎭 Playwright  │             │
-│                                  └─────────────────┘             │
+│  ┌──────────────────┐            ┌─────────────────┐   │          │
+│  │    dashboard      │            │  tool-gateway    │◀──┘          │
+│  │   (Python)        │            │  (Node.js)      │             │
+│  │                   │            │                 │             │
+│  │  📊 Status UI     │            │  🌐 Browser     │             │
+│  │  📋 Task API      │            │  🔍 Search      │             │
+│  │  🔧 Self-heal     │            │  📄 Fetch       │             │
+│  │  🔗 Tunnel        │            │  🌤️ Weather     │             │
+│  └──────────────────┘            │  🎭 Playwright  │             │
+│                                   └─────────────────┘             │
 │                                                                    │
 │  Volumes:                                                          │
-│    ~/.mobyclaw/  ─── memory, config, schedules, sessions           │
+│    ~/.mobyclaw/  ─── user data (memory, tasks, schedules, creds)   │
 │    /workspace/* ─── your project folders (bind mounts)             │
 │    /source/     ─── mobyclaw source (self-modification)            │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-**Three services:**
+**Four services, one data directory:**
 
 | Container | Role | Technology |
 |---|---|---|
-| **gateway** | Orchestrator — messaging, sessions, scheduling, heartbeat, REST API | Node.js / Express |
-| **moby** | AI brain — LLM inference, tool execution, memory | cagent |
-| **tool-gateway** | External tools — web browser, search, fetch, weather via MCP | Node.js / Playwright |
+| **gateway** | Orchestrator - messaging, sessions, scheduling, heartbeat, REST API | Node.js / Express |
+| **moby** | AI brain - LLM inference, tool execution, memory | cagent |
+| **tool-gateway** | External tools - web browser, search, fetch, weather via MCP | Node.js / Playwright |
+| **dashboard** | Web UI, task API (SQLite), maintenance scripts, Cloudflare tunnel | Python 3.11 |
 
-Powered by [cagent](https://github.com/docker/cagent) for the agent loop —
+**Architecture principle: code vs data.**
+All service code lives in the repo and ships as container images.
+All user data lives in `~/.mobyclaw/` and survives rebuilds.
+
+Powered by [cagent](https://github.com/docker/cagent) for the agent loop -
 LLM inference, tool execution, and session management are all handled by
 cagent. Mobyclaw adds orchestration, messaging, scheduling, and persistent
 memory on top.
@@ -100,7 +107,7 @@ bridge. Tools range from lightweight utilities to a full headless browser.
 
 | Tool | What it does |
 |---|---|
-| `browser_fetch` | Fetch a URL → clean readable text (Readability extraction) |
+| `browser_fetch` | Fetch a URL - clean readable text (Readability extraction) |
 | `browser_search` | Web search via DuckDuckGo |
 | `weather_get` | Current weather + forecast for any location |
 
@@ -109,7 +116,7 @@ bridge. Tools range from lightweight utilities to a full headless browser.
 | Tool | What it does |
 |---|---|
 | `browser_navigate` | Go to a URL, returns accessibility snapshot with element refs |
-| `browser_snapshot` | Get current page state — all elements with ref IDs |
+| `browser_snapshot` | Get current page state - all elements with ref IDs |
 | `browser_screenshot` | Take a PNG screenshot |
 | `browser_click` | Click an element by ref |
 | `browser_type` | Type into an input field by ref |
@@ -125,18 +132,9 @@ bridge. Tools range from lightweight utilities to a full headless browser.
 | `browser_eval` | Execute JavaScript in the page |
 
 **How it works:** The agent navigates to a page and receives an accessibility
-snapshot — a structured text representation showing every interactive element
+snapshot - a structured text representation showing every interactive element
 with a ref ID. The agent uses these refs to click, type, and fill forms.
 After each action, it gets an updated snapshot with fresh refs.
-
-**Example flow:**
-```
-1. browser_navigate("https://example.com/signup")
-   → snapshot: textbox "Email" ref=s1e3, button "Sign up" ref=s1e5
-2. browser_type(ref="s1e3", text="user@example.com")
-3. browser_click(ref="s1e5")
-   → snapshot: "Account created!" heading
-```
 
 ---
 
@@ -157,9 +155,9 @@ cd mobyclaw
 
 The first run walks you through setup:
 - LLM provider and API key (required)
-- Messaging channels — Telegram (optional, more coming)
-- Service credentials — GitHub, AWS, custom (all optional)
-- Workspace folders — mount host directories into the agent (optional)
+- Messaging channels - Telegram (optional, more coming)
+- Service credentials - GitHub, AWS, custom (all optional)
+- Workspace folders - mount host directories into the agent (optional)
 
 ### 2. Talk to your agent
 
@@ -212,60 +210,54 @@ Give your agent access to CLIs like `gh`, `aws`, etc.:
 vim ~/.mobyclaw/credentials.env
 ```
 
-**GitHub** uses OAuth device flow — no token needed:
+**GitHub** uses OAuth device flow - no token needed:
 ```bash
-# After starting, just ask Moby to authenticate:
+# After starting, just ask the agent to authenticate:
 mobyclaw run "authenticate with GitHub"
-# Moby runs `gh auth login` and gives you a code + URL to open in your browser
+# The agent runs `gh auth login` and gives you a code + URL
 ```
-
-The `gh` OAuth session is persisted at `~/.mobyclaw/gh/` and survives restarts.
-
-**Other credentials** use standard `KEY=value` format in `credentials.env`:
-
-```
-AWS_ACCESS_KEY_ID=AKIA...
-AWS_SECRET_ACCESS_KEY=...
-NPM_TOKEN=npm_...
-```
-
-Credentials are injected as environment variables into the agent container.
-The agent is instructed never to display credential values.
 
 ---
 
 ## Configuration
 
-Everything lives in two places:
+Everything lives in two places - **code** and **data**:
 
-### Project root (git-tracked infrastructure)
+### Code (git-tracked, ships as containers)
 
-| File | Purpose |
+| Path | Purpose |
 |------|---------|
-| `docker-compose.yml` | Static compose manifest (3 services) |
-| `.env` | API keys, messaging tokens, settings (gitignored) |
+| `docker-compose.yml` | Compose manifest (4 services) |
+| `.env` | API keys, messaging tokens (gitignored) |
 | `agents/moby/soul.yaml` | Default agent personality |
+| `gateway/` | Gateway service code |
+| `dashboard/` | Dashboard service code + maintenance scripts |
+| `tool-gateway/` | Tool gateway service code |
 
-### `~/.mobyclaw/` (user data, portable)
+### Data (`~/.mobyclaw/`, user-specific, portable)
 
 | File | Purpose |
 |------|---------|
-| `soul.yaml` | Agent personality + config (user-editable) |
+| `soul.yaml` | Agent personality + config (user's working copy) |
 | `MEMORY.md` | Long-term curated memory |
 | `TASKS.md` | Task and reminder list |
-| `HEARTBEAT.md` | Heartbeat checklist |
+| `HEARTBEAT.md` | Heartbeat checklist (user-customizable) |
+| `LESSONS.md` | Lessons learned from experience |
 | `credentials.env` | Service credentials (AWS, NPM, etc.) |
-| `gh/` | GitHub CLI OAuth config (persisted across restarts) |
+| `gh/` | GitHub CLI OAuth config |
 | `workspaces.conf` | Workspace folder mappings |
-| `memory/` | Daily logs (YYYY-MM-DD.md) |
-| `sessions/` | Session persistence |
+| `channels.json` | Known messaging channels |
+| `schedules.json` | Persistent schedule store |
+| `data/` | Service data (tasks.db, tunnel state) |
+| `memory/` | Daily logs (YYYY-MM-DD.md) and archives |
 
 **Portability:** Copy `~/.mobyclaw/` to a new machine and your agent comes
-with you — memory, personality, credentials, everything.
+with you - memory, personality, credentials, everything. Rebuild the
+containers from the repo and you're running.
 
 ### Customize the personality
 
-Edit `~/.mobyclaw/soul.yaml` — the `instruction:` block is the agent's
+Edit `~/.mobyclaw/soul.yaml` - the `instruction:` block is the agent's
 personality and behavior in Markdown. After editing, restart with
 `./mobyclaw down && ./mobyclaw up`.
 
@@ -299,41 +291,30 @@ Commands:
 ```
 mobyclaw/
 ├── mobyclaw                    # CLI (bash script)
-├── docker-compose.yml          # Compose manifest (3 services)
+├── docker-compose.yml          # Compose manifest (4 services)
 ├── Dockerfile                  # Agent image: Debian + cagent + Node.js + mcp-bridge
 ├── agents/moby/
 │   ├── soul.yaml               # Agent personality, model, tools
 │   └── defaults/               # Templates copied to ~/.mobyclaw/ on init
 ├── gateway/
 │   ├── Dockerfile
-│   ├── package.json
-│   └── src/
-│       ├── index.js            # Express app + REST API
-│       ├── orchestrator.js     # Session routing, collect mode, debounce
-│       ├── agent-client.js     # HTTP client for cagent with SSE streaming
-│       ├── sessions.js         # Session store with lifecycle + queue
-│       ├── scheduler.js        # Schedules, reminders, heartbeat
-│       ├── heartbeat.js        # Heartbeat with skip guard
-│       ├── channels.js         # Persistent channel store
-│       ├── routes.js           # API routes including /api/stop
-│       ├── tool-labels.js      # Tool name formatting for Telegram
-│       ├── adapter-registry.js # Platform→sendFn dispatch
-│       └── adapters/
-│           └── telegram.js     # Telegram bot with streaming + typing
+│   └── src/                    # Express app, adapters, scheduler, heartbeat
 ├── tool-gateway/
-│   ├── Dockerfile              # Node.js 22 + Playwright + Chromium
-│   ├── package.json
-│   ├── mcp-bridge              # Node.js stdio↔HTTP bridge (also in moby)
-│   └── src/
-│       ├── index.js            # MCP server + admin API
-│       └── tools/
-│           ├── browser.js      # browser_fetch + browser_search
-│           ├── weather.js      # weather_get (Open-Meteo)
-│           └── playwright.js   # 16 browser automation tools
+│   ├── Dockerfile
+│   ├── mcp-bridge              # stdio-to-HTTP MCP bridge
+│   └── src/                    # MCP server + browser/search/weather tools
+├── dashboard/
+│   ├── Dockerfile              # Python 3.11 + cloudflared
+│   ├── server.py               # Dashboard HTTP server + Task API (SQLite)
+│   ├── start.sh                # Entrypoint: self-heal, boot, tunnel, server
+│   ├── static/                 # Dashboard web pages (status, tasks, settings)
+│   └── scripts/                # Maintenance scripts (self-heal, boot, repos, memory)
 ├── site/                       # GitHub Pages landing page
-├── docs/                       # Architecture documentation
+├── docs/                       # Architecture documentation (15 files)
 └── README.md
 ```
+
+**Code in the repo. Data in `~/.mobyclaw/`.** See [docs/04-project-structure.md](docs/04-project-structure.md) for the full breakdown.
 
 ---
 
@@ -344,24 +325,26 @@ the [online docs](https://nunocoracao.github.io/mobyclaw/docs/).
 
 ### Key design choices
 
-- **cagent native** — uses cagent's YAML format directly, no wrapper layer
-- **Docker Compose** — right-sized for personal deployment (not Kubernetes)
-- **Three containers** — gateway (orchestrator), moby (AI brain), tool-gateway (external tools)
-- **Plain files** — memory is Markdown, config is YAML, secrets are `.env`
-- **Bind mounts** — all state at `~/.mobyclaw/`, not Docker volumes (survives `docker system prune`)
-- **MCP bridge** — tool-gateway tools exposed to cagent via stdio↔HTTP bridge using MCP protocol
-- **Accessibility snapshots** — browser uses Playwright's aria-ref system for reliable element targeting
+- **Code vs data separation** - features/code in the repo, user data in `~/.mobyclaw/`
+- **cagent native** - uses cagent's YAML format directly, no wrapper layer
+- **Docker Compose** - right-sized for personal deployment (not Kubernetes)
+- **Four containers** - gateway (orchestrator), moby (AI brain), tool-gateway (external tools), dashboard (web UI + maintenance)
+- **Plain files** - memory is Markdown, config is YAML, secrets are `.env`
+- **Bind mounts** - all state at `~/.mobyclaw/`, not Docker volumes (survives `docker system prune`)
+- **MCP bridge** - tool-gateway tools exposed to cagent via stdio-to-HTTP bridge using MCP protocol
+- **Accessibility snapshots** - browser uses Playwright's aria-ref system for reliable element targeting
 
 ---
 
 ## Roadmap
 
-- [x] **Phase 1** — Agent in a box (CLI, memory, Docker Compose)
-- [x] **Phase 2** — Gateway + Telegram streaming, heartbeat, scheduling, reminders
-- [x] **Phase 2.5** — OpenClaw-inspired session UX (queue, collect mode, /stop, /status)
-- [x] **Phase 2.7** — Tool gateway (web browsing, search, fetch, weather, 19 MCP tools)
-- [ ] **Phase 3** — More messaging channels, webhook ingress, vector memory search
-- [ ] **Phase 4** — Production hardening (seccomp, network policy, monitoring)
+- [x] **Phase 1** - Agent in a box (CLI, memory, Docker Compose)
+- [x] **Phase 2** - Gateway + Telegram streaming, heartbeat, scheduling, reminders
+- [x] **Phase 2.5** - OpenClaw-inspired session UX (queue, collect mode, /stop, /status)
+- [x] **Phase 2.7** - Tool gateway (web browsing, search, fetch, weather, 19 MCP tools)
+- [x] **Phase 2.8** - Dashboard service, task API, maintenance scripts, code/data separation
+- [ ] **Phase 3** - More messaging channels, webhook ingress, vector memory search
+- [ ] **Phase 4** - Production hardening (seccomp, network policy, monitoring)
 
 ---
 
