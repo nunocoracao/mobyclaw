@@ -192,8 +192,9 @@ function registerPlaywrightTools(server) {
         }
         const page = await ensurePage();
         await page.goto(normalizedUrl, { waitUntil: "domcontentloaded" });
-        // Wait a bit for JS to settle
-        await page.waitForLoadState("networkidle").catch(() => {});
+        // Short wait for JS to settle — don't use networkidle, it hangs
+        // on sites with persistent connections (analytics, service workers)
+        await page.waitForTimeout(1500);
         const text = await snapshotResponse(page);
         return { content: [{ type: "text", text }] };
       } catch (err) {
@@ -756,7 +757,7 @@ function registerPlaywrightTools(server) {
             currentPage = page;
             if (url) {
               await page.goto(url, { waitUntil: "domcontentloaded" });
-              await page.waitForLoadState("networkidle").catch(() => {});
+              await page.waitForTimeout(1500);
             }
             const snapshot = await snapshotResponse(page);
             return { content: [{ type: "text", text: snapshot }] };
