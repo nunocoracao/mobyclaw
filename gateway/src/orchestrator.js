@@ -17,6 +17,11 @@
 const DEBOUNCE_MS = parseInt(process.env.QUEUE_DEBOUNCE_MS || "1000", 10);
 const DASHBOARD_URL = process.env.DASHBOARD_URL || "http://dashboard:7777";
 
+const { addExchange } = require("./short-term-memory");
+
+// Accumulated usage for the current session day (in-memory, logged to dashboard)
+let _usageBuffer = [];
+
 let _drainTimer = null;
 
 function isSessionError(err) {
@@ -43,7 +48,7 @@ async function ensureSession(agent, session) {
   // Check if session needs lifecycle reset (daily/idle)
   if (session.shouldReset()) {
     console.log(`[orchestrator] Session lifecycle reset`);
-    session.clear();
+    session.clear(); // sets _sessionIsNew = true
   }
 
   let sessionId = session.getSessionId();
@@ -51,8 +56,10 @@ async function ensureSession(agent, session) {
     return sessionId;
   }
 
+  // Creating a brand new session — flag it for STM injection
   sessionId = await agent.createSession();
   session.setSessionId(sessionId);
+  session._sessionIsNew = true;
   console.log(`[orchestrator] New session: ${sessionId}`);
   return sessionId;
 }
@@ -67,13 +74,28 @@ async function processMessageStream(
 ) {
   try {
     console.log(`[${channelId}] -> agent (session: ${sessionId.slice(0, 8)}...)`);
-    const response = await agent.promptStream(message, sessionId, callbacks);
+    const result = await agent.promptStream(message, sessionId, callbacks);
+    const response = typeof result === "string" ? result : result.text || "";
+    const usage = typeof result === "object" ? result.usage : null;
     console.log(
-      `[${channelId}] <- agent (${response.length} chars)${response.length === 0 ? " [EMPTY]" : ""}`
+      `[${channelId}] <- agent (${response.length} chars)${response.length === 0 ? " [EMPTY]" : ""}` +
+      (usage ? ` [tokens: ${usage.input_tokens}in/${usage.output_tokens}out, $${usage.cost?.toFixed(4) || "?"}]` : "")
     );
 
     // Log conversation (fire-and-forget)
     logConversation(channelId, message, response, 0);
+
+    // Save to short-term memory (fire-and-forget)
+    try {
+      addExchange(channelId, message, response);
+    } catch (err) {
+      console.error(`[orchestrator] STM save failed: ${err.message}`);
+    }
+
+    // Log usage to dashboard (fire-and-forget)
+    if (usage) {
+      logUsage(channelId, sessionId, usage);
+    }
 
     return response;
   } catch (err) {
@@ -95,8 +117,11 @@ async function processMessageStream(
         session.setSessionId(newSessionId);
         console.log(`[orchestrator] Recovery session: ${newSessionId}`);
 
-        const response = await agent.promptStream(message, newSessionId, callbacks);
+        const retryResult = await agent.promptStream(message, newSessionId, callbacks);
+        const response = typeof retryResult === "string" ? retryResult : retryResult.text || "";
+        const usage = typeof retryResult === "object" ? retryResult.usage : null;
         console.log(`[${channelId}] <- agent retry (${response.length} chars)`);
+        if (usage) logUsage(channelId, newSessionId, usage);
         return response;
       } catch (retryErr) {
         console.error(`[${channelId}] Retry also failed: ${retryErr.message}`);
@@ -279,6 +304,36 @@ function logConversation(channelId, userMessage, agentResponse, toolCount) {
   }).catch((err) => {
     // Silent fail - conversation logging is best-effort
     console.error(`[orchestrator] Conversation log failed: ${err.message}`);
+  });
+}
+
+/**
+ * Log token usage to the dashboard API.
+ * Fire-and-forget - never blocks the response flow.
+ */
+function logUsage(channelId, sessionId, usage) {
+  if (!usage) return;
+
+  const payload = {
+    timestamp: new Date().toISOString(),
+    channel: channelId,
+    session_id: sessionId,
+    input_tokens: usage.input_tokens || 0,
+    output_tokens: usage.output_tokens || 0,
+    cached_input_tokens: usage.last_message?.cached_input_tokens || 0,
+    cached_write_tokens: usage.last_message?.cached_write_tokens || 0,
+    context_length: usage.context_length || 0,
+    context_limit: usage.context_limit || 0,
+    cost: usage.cost || 0,
+    model: usage.last_message?.Model || "",
+  };
+
+  fetch(`${DASHBOARD_URL}/api/usage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).catch((err) => {
+    console.error(`[orchestrator] Usage log failed: ${err.message}`);
   });
 }
 

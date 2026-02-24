@@ -7,14 +7,16 @@
 // the agent doesn't need to manually read MEMORY.md on
 // every turn — relevant context is pre-loaded.
 //
-// Also injects the agent's inner state (emotional state,
-// self-model summary) so continuity persists across turns
-// without requiring the agent to manually read files.
+// Also injects:
+//   - Inner state (emotional state from inner.json)
+//   - Self-model summary (from SELF.md)
+//   - Relevant explorations (from explorations/ folder)
 //
 // Features:
 //   - Keyword scoring: sections matching the user's message rank higher
 //   - Always includes: Identity, User, Preferences (core knowledge)
 //   - Inner state injection: emotional state from inner.json
+//   - Exploration injection: matching explorations from curiosity sessions
 //   - Prioritizes: IN PROGRESS tasks, recent entries
 //   - Deprioritizes: DONE/CANCELLED tasks, old entries
 //   - Token budget: configurable max tokens for context
@@ -28,6 +30,7 @@ const DASHBOARD_URL = process.env.DASHBOARD_URL || "http://dashboard:7777";
 const CONTEXT_BUDGET = parseInt(process.env.CONTEXT_BUDGET_TOKENS || "1500", 10);
 const CONTEXT_ENABLED = process.env.CONTEXT_OPTIMIZER !== "false"; // enabled by default
 const MOBYCLAW_HOME = process.env.MOBYCLAW_HOME || "/data/.mobyclaw";
+const EXPLORATION_CONTEXT_MAX = parseInt(process.env.EXPLORATION_CONTEXT_MAX || "2", 10);
 
 /**
  * Read the agent's inner emotional state file.
@@ -123,6 +126,96 @@ function getSelfSummary() {
 }
 
 /**
+ * Find explorations relevant to the user's message.
+ * Reads exploration files, scores by keyword overlap, returns top N.
+ * Returns a compact string, or "" if none found.
+ */
+function getRelevantExplorations(userMessage) {
+  try {
+    const explorationsDir = path.join(MOBYCLAW_HOME, "explorations");
+    if (!fs.existsSync(explorationsDir)) return "";
+
+    const files = fs.readdirSync(explorationsDir)
+      .filter(f => f.endsWith(".md"))
+      .sort()
+      .reverse(); // newest first
+
+    if (files.length === 0) return "";
+
+    // Extract keywords from user message (lowercase, 3+ chars, no stop words)
+    const stopWords = new Set([
+      "the", "and", "for", "are", "but", "not", "you", "all", "can", "had",
+      "her", "was", "one", "our", "out", "has", "have", "been", "some",
+      "them", "than", "this", "that", "what", "when", "how", "who", "which",
+      "will", "with", "from", "they", "would", "there", "their", "about",
+      "could", "other", "into", "more", "your", "just", "also", "very",
+    ]);
+    const messageWords = new Set(
+      userMessage.toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter(w => w.length >= 3 && !stopWords.has(w))
+    );
+
+    if (messageWords.size === 0) return "";
+
+    // Score each exploration by keyword overlap
+    const scored = [];
+    for (const file of files.slice(0, 50)) { // cap at 50 most recent
+      try {
+        const content = fs.readFileSync(
+          path.join(explorationsDir, file), "utf-8"
+        );
+
+        // Extract frontmatter topic for bonus scoring
+        const topicMatch = content.match(/^topic:\s*(.+)$/m);
+        const topic = topicMatch ? topicMatch[1].toLowerCase() : "";
+
+        const contentWords = new Set(
+          (content.toLowerCase() + " " + topic)
+            .replace(/[^a-z0-9\s]/g, " ")
+            .split(/\s+/)
+            .filter(w => w.length >= 3)
+        );
+
+        let score = 0;
+        for (const word of messageWords) {
+          if (contentWords.has(word)) score++;
+        }
+
+        // Bonus for topic match
+        for (const word of messageWords) {
+          if (topic.includes(word)) score += 2;
+        }
+
+        if (score > 0) {
+          scored.push({ file, content, score });
+        }
+      } catch { /* skip unreadable files */ }
+    }
+
+    if (scored.length === 0) return "";
+
+    // Return top N explorations, truncated
+    scored.sort((a, b) => b.score - a.score);
+    const top = scored.slice(0, EXPLORATION_CONTEXT_MAX);
+
+    const summaries = top.map(({ file, content }) => {
+      // Truncate to ~500 chars to keep context budget manageable
+      const truncated = content.length > 500
+        ? content.slice(0, 500) + "\n[...truncated]"
+        : content;
+      return `### ${file}\n${truncated}`;
+    });
+
+    return summaries.join("\n\n");
+  } catch (err) {
+    console.error(`[context] Exploration read error: ${err.message}`);
+    return "";
+  }
+}
+
+/**
  * Fetch optimized context for a user message.
  * Returns a string to prepend to the message, or "" on failure.
  */
@@ -164,6 +257,7 @@ async function getOptimizedContext(userMessage) {
   // Read inner state (local file, fast)
   const innerState = getInnerState();
   const selfSummary = getSelfSummary();
+  const explorations = getRelevantExplorations(userMessage);
 
   // Build the combined context block
   const parts = [];
@@ -178,6 +272,10 @@ async function getOptimizedContext(userMessage) {
 
   if (selfSummary) {
     parts.push(`[SELF — who you think you are]\n${selfSummary}\n[/SELF]`);
+  }
+
+  if (explorations) {
+    parts.push(`[EXPLORATIONS — relevant things you've explored]\n${explorations}\n[/EXPLORATIONS]`);
   }
 
   if (parts.length === 0) return "";

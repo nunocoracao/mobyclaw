@@ -43,6 +43,10 @@ class SessionStore {
     // Abort support
     this._currentAbortController = null;
 
+    // Short-term memory: track when a new session starts
+    // so we can inject recent history on the first message
+    this._sessionIsNew = false;
+
     this._load();
   }
 
@@ -103,6 +107,7 @@ class SessionStore {
     this.sessionId = null;
     this.turnCount = 0;
     this.lastResetAt = new Date().toISOString();
+    this._sessionIsNew = true; // next message should get STM injection
     this._save();
   }
 
@@ -292,6 +297,24 @@ class SessionStore {
 
   clearAbortController() {
     this._currentAbortController = null;
+  }
+
+  // -- Short-term memory flag -----------------------------------
+
+  /**
+   * Check if this is a fresh session that needs STM injection.
+   * Consuming: returns true once, then resets the flag.
+   */
+  consumeNewSessionFlag() {
+    if (this._sessionIsNew) {
+      this._sessionIsNew = false;
+      return true;
+    }
+    return false;
+  }
+
+  isNewSession() {
+    return this._sessionIsNew;
   }
 }
 

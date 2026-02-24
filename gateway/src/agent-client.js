@@ -163,6 +163,7 @@ class AgentClient {
         let buffer = "";
         let currentToolName = null;
         let streamError = null;  // Track errors from SSE events
+        let tokenUsage = null;   // Captured from token_usage SSE event
 
         res.setEncoding("utf8");
 
@@ -224,6 +225,11 @@ class AgentClient {
                   break;
                 }
 
+                case "token_usage": {
+                  tokenUsage = event.usage || null;
+                  break;
+                }
+
                 case "error": {
                   const errMsg = event.message || event.error || JSON.stringify(event);
                   streamError = errMsg;
@@ -256,7 +262,7 @@ class AgentClient {
             reject(new Error(`Stream error: ${streamError}`));
             return;
           }
-          resolve(result.trim());
+          resolve({ text: result.trim(), usage: tokenUsage });
         });
 
         res.on("error", (err) => {

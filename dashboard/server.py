@@ -86,6 +86,24 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_conv_topics ON conversations(topics);
         CREATE INDEX IF NOT EXISTS idx_conv_timestamp ON conversations(timestamp);
 
+        CREATE TABLE IF NOT EXISTS usage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            channel TEXT DEFAULT '',
+            session_id TEXT DEFAULT '',
+            input_tokens INTEGER DEFAULT 0,
+            output_tokens INTEGER DEFAULT 0,
+            cached_input_tokens INTEGER DEFAULT 0,
+            cached_write_tokens INTEGER DEFAULT 0,
+            context_length INTEGER DEFAULT 0,
+            context_limit INTEGER DEFAULT 0,
+            cost REAL DEFAULT 0,
+            model TEXT DEFAULT ''
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON usage(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_usage_channel ON usage(channel);
+
         CREATE TABLE IF NOT EXISTS lessons (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             lesson TEXT NOT NULL,
@@ -410,6 +428,119 @@ def search_conversations(query):
     ).fetchall()]
     conn.close()
     return results
+
+# ─── Usage Tracking ─────────────────────────────────────────
+
+def log_usage(data):
+    """Log a single usage entry from a prompt response."""
+    conn = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute("""
+        INSERT INTO usage (timestamp, channel, session_id, input_tokens, output_tokens,
+                          cached_input_tokens, cached_write_tokens, context_length,
+                          context_limit, cost, model)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        data.get("timestamp", now),
+        data.get("channel", ""),
+        data.get("session_id", ""),
+        data.get("input_tokens", 0),
+        data.get("output_tokens", 0),
+        data.get("cached_input_tokens", 0),
+        data.get("cached_write_tokens", 0),
+        data.get("context_length", 0),
+        data.get("context_limit", 0),
+        data.get("cost", 0),
+        data.get("model", ""),
+    ))
+    conn.commit()
+    conn.close()
+
+def get_usage_stats(days=None, channel=None):
+    """Get usage statistics. Optionally filter by days or channel."""
+    conn = get_db()
+    where_parts = []
+    params = []
+
+    if days:
+        where_parts.append("timestamp >= datetime('now', ?)")
+        params.append(f"-{days} days")
+    if channel:
+        where_parts.append("channel = ?")
+        params.append(channel)
+
+    where = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+    # Summary stats
+    summary = conn.execute(f"""
+        SELECT
+            COUNT(*) as total_requests,
+            COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+            COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+            COALESCE(SUM(cached_input_tokens), 0) as total_cached_tokens,
+            COALESCE(SUM(cost), 0) as total_cost,
+            COALESCE(AVG(cost), 0) as avg_cost_per_request,
+            COALESCE(AVG(input_tokens + output_tokens), 0) as avg_tokens_per_request
+        FROM usage{where}
+    """, params).fetchone()
+
+    # Daily breakdown
+    daily = [dict(row) for row in conn.execute(f"""
+        SELECT
+            DATE(timestamp) as date,
+            COUNT(*) as requests,
+            SUM(input_tokens) as input_tokens,
+            SUM(output_tokens) as output_tokens,
+            SUM(cached_input_tokens) as cached_tokens,
+            SUM(cost) as cost
+        FROM usage{where}
+        GROUP BY DATE(timestamp)
+        ORDER BY date DESC
+        LIMIT 30
+    """, params).fetchall()]
+
+    # By channel
+    by_channel = [dict(row) for row in conn.execute(f"""
+        SELECT
+            channel,
+            COUNT(*) as requests,
+            SUM(cost) as cost,
+            SUM(input_tokens) as input_tokens,
+            SUM(output_tokens) as output_tokens
+        FROM usage{where}
+        GROUP BY channel
+        ORDER BY cost DESC
+    """, params).fetchall()]
+
+    # By model
+    by_model = [dict(row) for row in conn.execute(f"""
+        SELECT
+            model,
+            COUNT(*) as requests,
+            SUM(cost) as cost,
+            SUM(input_tokens) as input_tokens,
+            SUM(output_tokens) as output_tokens
+        FROM usage{where}
+        GROUP BY model
+        ORDER BY cost DESC
+    """, params).fetchall()]
+
+    conn.close()
+    return {
+        "summary": dict(summary) if summary else {},
+        "daily": daily,
+        "by_channel": by_channel,
+        "by_model": by_model,
+    }
+
+def get_usage_recent(limit=50):
+    """Get recent usage entries."""
+    conn = get_db()
+    rows = [dict(row) for row in conn.execute(
+        "SELECT * FROM usage ORDER BY timestamp DESC LIMIT ?", (limit,)
+    ).fetchall()]
+    conn.close()
+    return rows
 
 # ─── Lessons System ─────────────────────────────────────────
 
@@ -767,6 +898,90 @@ def get_optimized_context(query=None, budget_tokens=None):
     }
 
 
+# ─── Explorations API ───────────────────────────────────────
+
+def get_explorations(query=None, limit=50):
+    """List exploration files, optionally filtered by keyword."""
+    explorations_dir = f"{MOBY_DIR}/explorations"
+    if not os.path.exists(explorations_dir):
+        return []
+
+    files = sorted(
+        [f for f in os.listdir(explorations_dir) if f.endswith(".md")],
+        reverse=True
+    )[:limit]
+
+    results = []
+    for fname in files:
+        fpath = os.path.join(explorations_dir, fname)
+        try:
+            with open(fpath) as f:
+                content = f.read()
+        except:
+            continue
+
+        # Parse frontmatter
+        meta = {"file": fname, "content": content}
+        if content.startswith("---"):
+            parts = content.split("---", 2)
+            if len(parts) >= 3:
+                for line in parts[1].strip().split("\n"):
+                    if ":" in line:
+                        key, val = line.split(":", 1)
+                        meta[key.strip()] = val.strip()
+                meta["body"] = parts[2].strip()
+
+        # Filter by query if provided
+        if query:
+            q = query.lower()
+            searchable = (content + " " + fname).lower()
+            if q not in searchable:
+                continue
+
+        results.append(meta)
+
+    return results
+
+
+def get_exploration(filename):
+    """Read a single exploration file."""
+    explorations_dir = f"{MOBY_DIR}/explorations"
+    fpath = os.path.join(explorations_dir, filename)
+    if not os.path.exists(fpath) or not filename.endswith(".md"):
+        return None
+    with open(fpath) as f:
+        return {"file": filename, "content": f.read()}
+
+
+def get_exploration_stats():
+    """Quick stats about explorations."""
+    explorations_dir = f"{MOBY_DIR}/explorations"
+    if not os.path.exists(explorations_dir):
+        return {"count": 0, "topics": [], "latest": None}
+
+    files = sorted(
+        [f for f in os.listdir(explorations_dir) if f.endswith(".md")],
+        reverse=True
+    )
+
+    topics = []
+    for fname in files[:20]:
+        try:
+            with open(os.path.join(explorations_dir, fname)) as f:
+                content = f.read()
+            match = re.search(r'^topic:\s*(.+)$', content, re.MULTILINE)
+            if match:
+                topics.append(match.group(1).strip())
+        except:
+            pass
+
+    return {
+        "count": len(files),
+        "topics": topics,
+        "latest": files[0] if files else None,
+    }
+
+
 # ─── Settings API ───────────────────────────────────────────
 
 def get_settings():
@@ -902,11 +1117,36 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             else:
                 self.send_json({"date": day, "content": ""})
 
+        # Explorations API
+        elif path == "/api/explorations":
+            query = params.get("q", [None])[0]
+            limit = int(params.get("limit", ["50"])[0])
+            self.send_json(get_explorations(query, limit))
+        elif path == "/api/explorations/stats":
+            self.send_json(get_exploration_stats())
+        elif path.startswith("/api/explorations/") and path.count("/") == 3:
+            filename = path.split("/")[-1]
+            result = get_exploration(filename)
+            if result:
+                self.send_json(result)
+            else:
+                self.send_json({"error": "Not found"}, 404)
+
         # Context Window Optimizer
         elif path == "/api/context":
             query = params.get("query", [None])[0]
             budget = int(params.get("budget", [str(DEFAULT_CONTEXT_BUDGET)])[0])
             self.send_json(get_optimized_context(query, budget))
+
+        # Usage API
+        elif path == "/api/usage":
+            limit = int(params.get("limit", ["50"])[0])
+            self.send_json(get_usage_recent(limit))
+        elif path == "/api/usage/stats":
+            days = params.get("days", [None])[0]
+            channel = params.get("channel", [None])[0]
+            days = int(days) if days else None
+            self.send_json(get_usage_stats(days, channel))
 
         # Auto-retry status
         elif path == "/api/retry/status":
@@ -981,6 +1221,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         elif path == "/api/retry/run":
             retried = auto_retry_failed_tasks()
             self.send_json({"retried": retried, "count": len(retried)})
+        elif path == "/api/usage":
+            log_usage(body)
+            self.send_json({"ok": True}, 201)
         elif path == "/api/inner-state":
             write_inner_state(body)
             self.send_json({"ok": True})
@@ -1079,7 +1322,32 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             "tunnel_url": tunnel_url,
             "memory_size": memory_size,
             "memory_lines": memory_lines,
+            "usage": self.get_usage_summary(),
         }
+
+    def get_usage_summary(self):
+        """Quick usage summary for the status endpoint."""
+        try:
+            conn = get_db()
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            today_row = conn.execute(
+                "SELECT COUNT(*) as requests, COALESCE(SUM(cost), 0) as cost, "
+                "COALESCE(SUM(input_tokens), 0) as input_tokens, "
+                "COALESCE(SUM(output_tokens), 0) as output_tokens "
+                "FROM usage WHERE timestamp LIKE ?",
+                (f"{today}%",)
+            ).fetchone()
+            total_row = conn.execute(
+                "SELECT COUNT(*) as requests, COALESCE(SUM(cost), 0) as cost "
+                "FROM usage"
+            ).fetchone()
+            conn.close()
+            return {
+                "today": dict(today_row) if today_row else {},
+                "total": dict(total_row) if total_row else {},
+            }
+        except Exception:
+            return {}
 
     def get_task_stats(self):
         conn = get_db()
