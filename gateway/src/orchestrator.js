@@ -18,6 +18,7 @@ const DEBOUNCE_MS = parseInt(process.env.QUEUE_DEBOUNCE_MS || "1000", 10);
 const DASHBOARD_URL = process.env.DASHBOARD_URL || "http://dashboard:7777";
 
 const { addExchange, getHistoryBlock } = require("./short-term-memory");
+const { calculateCost } = require("./pricing");
 
 // Accumulated usage for the current session day (in-memory, logged to dashboard)
 let _usageBuffer = [];
@@ -72,6 +73,10 @@ async function processMessageStream(
   message,
   callbacks
 ) {
+  // Create and register an AbortController so /stop can kill this request
+  const ctrl = new AbortController();
+  session.setAbortController(ctrl);
+
   try {
     // Inject short-term memory on first message of a new session
     let finalMessage = message;
@@ -84,7 +89,7 @@ async function processMessageStream(
     }
 
     console.log(`[${channelId}] -> agent (session: ${sessionId.slice(0, 8)}...)`);
-    const result = await agent.promptStream(finalMessage, sessionId, callbacks);
+    const result = await agent.promptStream(finalMessage, sessionId, { ...callbacks, signal: ctrl.signal });
     const response = typeof result === "string" ? result : result.text || "";
     const usage = typeof result === "object" ? result.usage : null;
     console.log(
@@ -127,7 +132,7 @@ async function processMessageStream(
         session.setSessionId(newSessionId);
         console.log(`[orchestrator] Recovery session: ${newSessionId}`);
 
-        const retryResult = await agent.promptStream(message, newSessionId, callbacks);
+        const retryResult = await agent.promptStream(message, newSessionId, { ...callbacks, signal: ctrl.signal });
         const response = typeof retryResult === "string" ? retryResult : retryResult.text || "";
         const usage = typeof retryResult === "object" ? retryResult.usage : null;
         console.log(`[${channelId}] <- agent retry (${response.length} chars)`);
@@ -339,18 +344,26 @@ function logConversation(channelId, userMessage, agentResponse, toolCount) {
 function logUsage(channelId, sessionId, usage) {
   if (!usage) return;
 
-  const payload = {
-    timestamp: new Date().toISOString(),
-    channel: channelId,
-    session_id: sessionId,
+  const model = usage.last_message?.Model || "";
+  const tokenCounts = {
     input_tokens: usage.input_tokens || 0,
     output_tokens: usage.output_tokens || 0,
     cached_input_tokens: usage.last_message?.cached_input_tokens || 0,
     cached_write_tokens: usage.last_message?.cached_write_tokens || 0,
+  };
+
+  // Calculate cost from token counts - don't trust cagent's cost field
+  const cost = calculateCost(model, tokenCounts);
+
+  const payload = {
+    timestamp: new Date().toISOString(),
+    channel: channelId,
+    session_id: sessionId,
+    ...tokenCounts,
     context_length: usage.context_length || 0,
     context_limit: usage.context_limit || 0,
-    cost: usage.cost || 0,
-    model: usage.last_message?.Model || "",
+    cost,
+    model,
   };
 
   fetch(`${DASHBOARD_URL}/api/usage`, {

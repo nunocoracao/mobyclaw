@@ -109,7 +109,7 @@ class AgentClient {
    *   onToolEnd    on tool_call_response (success/failure)
    */
   promptStream(message, sessionId, callbacks = {}) {
-    const { onToken, onToolStart, onToolDetail, onToolEnd, onError } =
+    const { onToken, onToolStart, onToolDetail, onToolEnd, onError, signal } =
       callbacks;
     const path = `/api/sessions/${sessionId}/agent/${AGENT_NAME}`;
     const body = JSON.stringify([{ role: "user", content: message }]);
@@ -127,6 +127,12 @@ class AgentClient {
           "Content-Length": Buffer.byteLength(body),
         },
       };
+
+      // If already aborted before we even start, reject immediately
+      if (signal?.aborted) {
+        reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+        return;
+      }
 
       const req = http.request(options, (res) => {
         // Socket-level dead-peer detection: if no TCP data for 5 minutes,
@@ -272,6 +278,16 @@ class AgentClient {
       });
 
       req.on("error", reject);
+
+      // Wire abort signal to destroy the in-flight request
+      if (signal) {
+        signal.addEventListener(
+          "abort",
+          () => req.destroy(Object.assign(new Error("aborted"), { name: "AbortError" })),
+          { once: true }
+        );
+      }
+
       req.on("timeout", () => {
         req.destroy(
           new Error(`Agent request timed out after ${RUN_TIMEOUT_MS / 1000}s`)
