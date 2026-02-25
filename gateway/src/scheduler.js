@@ -194,11 +194,18 @@ function startSchedulerLoop(
 ) {
   console.log(`[scheduler] Loop started (every ${intervalMs / 1000}s)`);
 
+  const inFlight = new Set(); // track schedules currently being processed
+
   const timer = setInterval(async () => {
     const due = store.getDue();
     if (due.length === 0) return;
 
     for (const schedule of due) {
+      if (inFlight.has(schedule.id)) {
+        console.log(`[scheduler] Skipping ${schedule.id} - already in flight`);
+        continue;
+      }
+      inFlight.add(schedule.id);
       console.log(
         `[scheduler] Firing: ${schedule.id} → ${schedule.channel}` +
           `${schedule.prompt ? " (prompt)" : ""}`
@@ -227,6 +234,7 @@ function startSchedulerLoop(
             if (!deliveryMessage) {
               console.warn(`[scheduler] No fallback message, skipping delivery`);
               store.markDelivered(schedule.id);
+              inFlight.delete(schedule.id);
               handleRecurring(store, schedule);
               continue;
             }
@@ -237,6 +245,7 @@ function startSchedulerLoop(
           );
           if (!deliveryMessage) {
             console.error(`[scheduler] No fallback, will retry next loop`);
+            inFlight.delete(schedule.id);
             continue;
           }
           console.log(`[scheduler] Falling back to pre-composed message`);
@@ -247,9 +256,11 @@ function startSchedulerLoop(
 
       if (ok) {
         store.markDelivered(schedule.id);
+        inFlight.delete(schedule.id);
         console.log(`[scheduler] Delivered: ${schedule.id}`);
         handleRecurring(store, schedule);
       } else {
+        inFlight.delete(schedule.id);
         console.error(
           `[scheduler] Delivery failed for ${schedule.id}, will retry next loop`
         );
