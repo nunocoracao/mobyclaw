@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mobyclaw - Usage &amp; Cost</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', 'SF Pro', -apple-system, sans-serif;
+    background: #0a0e1a; color: #e2e8f0; min-height: 100vh; padding: 1.5rem;
+  }
+  .container { max-width: 1000px; margin: 0 auto; }
+  nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 0.8rem; border-bottom: 1px solid #1e293b; align-items: center; }
+  nav a { color: #64748b; text-decoration: none; font-size: 0.85rem; }
+  nav a:hover, nav a.active { color: #38bdf8; }
+  nav .brand { font-weight: 700; color: #38bdf8; font-size: 1.1rem; margin-right: auto; }
+  nav .live { color: #34d399; font-size: 0.75rem; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8rem; margin-bottom: 1.5rem; }
+  .stat {
+    background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 1rem;
+  }
+  .stat .label { color: #64748b; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat .value { font-size: 1.6rem; font-weight: 700; margin-top: 0.2rem; }
+  .stat .sub { color: #475569; font-size: 0.7rem; margin-top: 0.15rem; }
+  .green { color: #34d399; } .blue { color: #38bdf8; } .amber { color: #fbbf24; } .red { color: #ef4444; } .purple { color: #a78bfa; }
+
+  .section { margin-bottom: 1.5rem; }
+  .section h2 {
+    font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.6rem;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+
+  table { width: 100%; border-collapse: collapse; background: #111827; border-radius: 8px; overflow: hidden; border: 1px solid #1e293b; }
+  th, td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid #1e293b; font-size: 0.8rem; }
+  th { color: #64748b; font-size: 0.7rem; text-transform: uppercase; background: #0d1220; }
+  td.right, th.right { text-align: right; }
+  td code { background: #1e293b; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.75rem; color: #38bdf8; }
+
+  .bar-chart { margin-top: 0.5rem; }
+  .bar-row {
+    display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem;
+    font-size: 0.75rem;
+  }
+  .bar-label { width: 80px; color: #94a3b8; text-align: right; flex-shrink: 0; }
+  .bar-track { flex: 1; height: 20px; background: #1e293b; border-radius: 4px; overflow: hidden; position: relative; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; min-width: 2px; }
+  .bar-fill.input { background: #38bdf8; }
+  .bar-fill.output { background: #a78bfa; }
+  .bar-fill.cached { background: #34d399; }
+  .bar-value { width: 70px; color: #64748b; font-size: 0.7rem; }
+
+  .cost-big { font-size: 2.2rem; font-weight: 800; color: #fbbf24; }
+  .cost-per-day { font-size: 0.85rem; color: #94a3b8; margin-top: 0.3rem; }
+
+  .filter-bar {
+    display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;
+  }
+  .filter-btn {
+    background: #111827; border: 1px solid #1e293b; color: #94a3b8;
+    padding: 0.3rem 0.8rem; border-radius: 6px; cursor: pointer; font-size: 0.75rem;
+  }
+  .filter-btn:hover, .filter-btn.active { border-color: #38bdf8; color: #38bdf8; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+  .dot.green { background: #34d399; } .dot.pulse { animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+  .footer { text-align: center; color: #334155; font-size: 0.7rem; padding-top: 1.5rem; border-top: 1px solid #1e293b; margin-top: 1rem; }
+
+  .legend { display: flex; gap: 1rem; margin-top: 0.5rem; font-size: 0.7rem; color: #64748b; }
+  .legend-item { display: flex; align-items: center; gap: 0.3rem; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+  .empty { color: #475569; text-align: center; padding: 2rem; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <nav>
+    <span class="brand">🐋 mobyclaw</span>
+    <a href="/">Dashboard</a>
+    <a href="/tasks">Tasks</a>
+    <a href="/usage" class="active">Usage</a>
+    <a href="/settings">Settings</a>
+    <span class="live"><span class="dot green pulse"></span>Live</span>
+  </nav>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="filter-bar">
+    <button class="filter-btn active" data-days="">All Time</button>
+    <button class="filter-btn" data-days="1">Today</button>
+    <button class="filter-btn" data-days="7">7 Days</button>
+    <button class="filter-btn" data-days="30">30 Days</button>
+  </div>
+
+  <div class="two-col">
+    <div class="section">
+      <h2>📊 Daily Cost</h2>
+      <div id="daily-chart" class="bar-chart"></div>
+    </div>
+    <div class="section">
+      <h2>📡 By Channel</h2>
+      <table>
+        <thead><tr><th>Channel</th><th class="right">Requests</th><th class="right">Cost</th><th class="right">Tokens</th></tr></thead>
+        <tbody id="by-channel"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="section">
+      <h2>🧠 By Model</h2>
+      <table>
+        <thead><tr><th>Model</th><th class="right">Requests</th><th class="right">Cost</th></tr></thead>
+        <tbody id="by-model"></tbody>
+      </table>
+    </div>
+    <div class="section">
+      <h2>📈 Token Breakdown</h2>
+      <div id="token-breakdown"></div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#38bdf8"></div> Input</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div> Output</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div> Cached</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>🕐 Recent Requests</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Channel</th>
+          <th class="right">Input</th>
+          <th class="right">Output</th>
+          <th class="right">Cached</th>
+          <th class="right">Cost</th>
+          <th>Model</th>
+        </tr>
+      </thead>
+      <tbody id="recent-usage"></tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    🐋 mobyclaw Usage Dashboard | Auto-refreshes every 30s
+  </div>
+</div>
+
+<script>
+let currentDays = null;
+
+function fmt(n) { return n ? n.toLocaleString() : '0'; }
+function fmtCost(n) { return n ? '$' + n.toFixed(4) : '$0.0000'; }
+function fmtCostBig(n) { return n ? '$' + n.toFixed(2) : '$0.00'; }
+function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
+function shortChannel(c) { return (c||'unknown').replace('telegram:', 'tg:').replace('heartbeat:', 'hb:').replace('schedule:', 'sch:'); }
+function shortTime(ts) {
+  if (!ts) return '-';
+  const d = new Date(ts);
+  return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) + ' ' +
+         d.toLocaleDateString([], {month:'short', day:'numeric'});
+}
+
+async function load() {
+  const daysParam = currentDays ? `?days=${currentDays}` : '';
+  const stats = await (await fetch(`/api/usage/stats${daysParam}`)).json();
+  const recent = await (await fetch('/api/usage?limit=25')).json();
+
+  const s = stats.summary || {};
+  const avgCost = s.avg_cost_per_request || 0;
+  const totalReqs = s.total_requests || 0;
+  const totalCost = s.total_cost || 0;
+  const totalInput = s.total_input_tokens || 0;
+  const totalOutput = s.total_output_tokens || 0;
+  const totalCached = s.total_cached_tokens || 0;
+  const cacheRate = totalInput > 0 ? Math.round(totalCached / totalInput * 100) : 0;
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="label">Total Cost</div><div class="value amber">${fmtCostBig(totalCost)}</div><div class="sub">${fmt(totalReqs)} requests</div></div>
+    <div class="stat"><div class="label">Avg / Request</div><div class="value blue">${fmtCost(avgCost)}</div><div class="sub">per prompt</div></div>
+    <div class="stat"><div class="label">Input Tokens</div><div class="value" style="color:#38bdf8">${fmt(totalInput)}</div><div class="sub">${cacheRate}% cached</div></div>
+    <div class="stat"><div class="label">Output Tokens</div><div class="value purple">${fmt(totalOutput)}</div><div class="sub">generated</div></div>
+    <div class="stat"><div class="label">Cache Hits</div><div class="value green">${fmt(totalCached)}</div><div class="sub">${cacheRate}% hit rate</div></div>
+  `;
+
+  // Daily chart
+  const daily = (stats.daily || []).slice(0, 14).reverse();
+  const chartEl = document.getElementById('daily-chart');
+  if (daily.length > 0) {
+    const maxCost = Math.max(...daily.map(d => d.cost || 0), 0.001);
+    chartEl.innerHTML = daily.map(d => {
+      const pct = Math.round(((d.cost || 0) / maxCost) * 100);
+      const dateStr = d.date ? d.date.slice(5) : '?';
+      return `<div class="bar-row">
+        <span class="bar-label">${dateStr}</span>
+        <div class="bar-track"><div class="bar-fill input" style="width:${pct}%"></div></div>
+        <span class="bar-value">${fmtCost(d.cost)} (${d.requests})</span>
+      </div>`;
+    }).join('');
+  } else {
+    chartEl.innerHTML = '<div class="empty">No usage data yet</div>';
+  }
+
+  // By channel
+  const byChannel = stats.by_channel || [];
+  const channelTbody = document.getElementById('by-channel');
+  channelTbody.innerHTML = byChannel.length ? byChannel.map(c => `
+    <tr>
+      <td><code>${esc(shortChannel(c.channel))}</code></td>
+      <td class="right">${fmt(c.requests)}</td>
+      <td class="right amber">${fmtCost(c.cost)}</td>
+      <td class="right">${fmt((c.input_tokens||0) + (c.output_tokens||0))}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="4" class="empty">No data</td></tr>';
+
+  // By model
+  const byModel = stats.by_model || [];
+  const modelTbody = document.getElementById('by-model');
+  modelTbody.innerHTML = byModel.length ? byModel.map(m => `
+    <tr>
+      <td><code>${esc(m.model || 'unknown')}</code></td>
+      <td class="right">${fmt(m.requests)}</td>
+      <td class="right amber">${fmtCost(m.cost)}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="3" class="empty">No data</td></tr>';
+
+  // Token breakdown per day (visual)
+  const breakdownEl = document.getElementById('token-breakdown');
+  if (daily.length > 0) {
+    const maxTokens = Math.max(...daily.map(d => (d.input_tokens||0) + (d.output_tokens||0)), 1);
+    breakdownEl.innerHTML = daily.slice(-7).map(d => {
+      const inPct = Math.round(((d.input_tokens||0) / maxTokens) * 100);
+      const outPct = Math.round(((d.output_tokens||0) / maxTokens) * 100);
+      const cachePct = Math.round(((d.cached_tokens||0) / maxTokens) * 100);
+      const dateStr = d.date ? d.date.slice(5) : '?';
+      return `<div class="bar-row">
+        <span class="bar-label">${dateStr}</span>
+        <div class="bar-track" style="display:flex">
+          <div class="bar-fill cached" style="width:${cachePct}%"></div>
+          <div class="bar-fill input" style="width:${Math.max(inPct - cachePct, 0)}%"></div>
+          <div class="bar-fill output" style="width:${outPct}%"></div>
+        </div>
+        <span class="bar-value">${fmt((d.input_tokens||0)+(d.output_tokens||0))}</span>
+      </div>`;
+    }).join('');
+  } else {
+    breakdownEl.innerHTML = '<div class="empty">No data</div>';
+  }
+
+  // Recent requests
+  const recentTbody = document.getElementById('recent-usage');
+  recentTbody.innerHTML = recent.length ? recent.map(r => `
+    <tr>
+      <td>${shortTime(r.timestamp)}</td>
+      <td><code>${esc(shortChannel(r.channel))}</code></td>
+      <td class="right">${fmt(r.input_tokens)}</td>
+      <td class="right">${fmt(r.output_tokens)}</td>
+      <td class="right green">${fmt(r.cached_input_tokens)}</td>
+      <td class="right amber">${fmtCost(r.cost)}</td>
+      <td style="font-size:0.7rem;color:#64748b">${esc((r.model||'').replace('anthropic/', ''))}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="7" class="empty">No usage data yet. Usage is tracked automatically per request.</td></tr>';
+}
+
+// Filter buttons
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentDays = btn.dataset.days || null;
+    load();
+  });
+});
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

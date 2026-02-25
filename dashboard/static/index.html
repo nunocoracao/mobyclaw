@@ -75,6 +75,7 @@
     <span class="brand">🐋 mobyclaw</span>
     <a href="/" class="active">Dashboard</a>
     <a href="/tasks">Tasks</a>
+    <a href="/usage">Usage</a>
     <a href="/settings">Settings</a>
     <span class="live"><span class="dot green pulse"></span>Live</span>
   </nav>
@@ -111,8 +112,16 @@ async function load() {
   const tasks = status.tasks || {};
   const open = (tasks.todo || 0) + (tasks.in_progress || 0);
 
+  const usage = status.usage || {};
+  const todayCost = (usage.today && usage.today.cost) ? '$' + usage.today.cost.toFixed(2) : '$0.00';
+  const totalCost = (usage.total && usage.total.cost) ? '$' + usage.total.cost.toFixed(2) : '$0.00';
+  const todayReqs = (usage.today && usage.today.requests) || 0;
+  const totalReqs = (usage.total && usage.total.requests) || 0;
+
   document.getElementById('stats').innerHTML = `
     <div class="stat"><div class="label">Status</div><div class="value green"><span class="dot green pulse"></span>Online</div></div>
+    <div class="stat"><div class="label">Cost Today</div><div class="value amber">${todayCost}</div><div class="sub">${todayReqs} requests</div></div>
+    <div class="stat"><div class="label">Total Cost</div><div class="value amber">${totalCost}</div><div class="sub">${totalReqs} requests total</div></div>
     <div class="stat"><div class="label">Tasks</div><div class="value blue">${status.total_tasks || 0}</div><div class="sub">${open} open, ${tasks.done||0} done</div></div>
     <div class="stat"><div class="label">Conversations</div><div class="value blue">${status.conversations_indexed || 0}</div><div class="sub">indexed</div></div>
     <div class="stat"><div class="label">Lessons</div><div class="value amber">${status.lessons_learned || 0}</div><div class="sub">learned</div></div>

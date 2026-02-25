@@ -1178,6 +1178,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         # Dashboard pages
         elif path == "/tasks":
             self.serve_page("tasks.html")
+        elif path == "/usage":
+            self.serve_page("usage.html")
         elif path == "/settings":
             self.serve_page("settings.html")
         else:
