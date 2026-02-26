@@ -90,6 +90,15 @@ Deliverables:
 - **Telegraf polling liveness**: Monitor and restart polling if it dies silently (5min threshold)
 - **mcp-bridge improvements**: Connection retry (3 attempts), tool call timeout (120s), graceful shutdown
 
+### Phase 2.9.1 — Dashboard + Tunnel Polish ✅ COMPLETE
+
+**Goal:** Agent self-service for tunnel management, dashboard API completeness.
+
+Deliverables:
+- **Agent-controlled tunnel start**: `POST /api/tunnel/start` endpoint - agent can start Cloudflare tunnel without host access. Delivers URL via Telegram automatically.
+- **Full dashboard API reference**: All GET/POST/PUT endpoints documented in architecture docs
+- **Tunnel status endpoint**: `GET /api/tunnel` returns current URL, PID, and start time
+
 ### Phase 3 — Read-Only Integrations 🔜 PLANNED
 
 **Goal:** Agent can read from Slack, Notion, Gmail, and Google Calendar.

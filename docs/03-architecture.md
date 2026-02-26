@@ -168,3 +168,65 @@ cagent supports multiple serving modes. We use:
 | **A2A Server** | `cagent serve a2a soul.yaml` | Future: Agent-to-agent protocol |
 | **Exec** | `cagent run --exec soul.yaml` | One-shot: run a task and exit |
 | **Interactive** | `cagent run soul.yaml` | Dev/debug: TUI inside container |
+
+### Dashboard API Reference
+
+The dashboard (`http://dashboard:7777`) exposes a REST API used by moby, the gateway, and the web UI.
+
+#### Read endpoints (GET)
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/settings` | Current settings including tunnel info, soul config |
+| `GET /api/tasks` | List tasks (filter: `?status=todo\|in_progress\|done\|failed`, `?priority=`, `?tag=`) |
+| `GET /api/tasks/stats` | Task counts by status |
+| `GET /api/tasks/blocked` | Tasks blocked by unmet dependencies |
+| `GET /api/tasks/:id/deps` | Dependency check for a specific task |
+| `GET /api/conversations` | Conversation log (filter: `?q=search_term`, `?channel=`, `?limit=`) |
+| `GET /api/conversations/stats` | Conversation counts and channel breakdown |
+| `GET /api/lessons` | Lessons learned entries |
+| `GET /api/memory` | Raw MEMORY.md content |
+| `GET /api/soul` | Current soul.yaml content |
+| `GET /api/inner-state` | Current inner.json (agent emotional state) |
+| `GET /api/self-model` | Current SELF.md content |
+| `GET /api/journal` | Recent journal entries (filter: `?date=YYYY-MM-DD`) |
+| `GET /api/explorations` | Exploration files list and content |
+| `GET /api/explorations/stats` | Exploration counts and topics |
+| `GET /api/context` | Context optimizer output (params: `?query=`, `?budget=`) |
+| `GET /api/usage` | Token usage log entries |
+| `GET /api/usage/stats` | Aggregated cost and token stats |
+| `GET /api/retry/status` | Auto-retry queue status |
+| `GET /api/tunnel` | Current tunnel info (URL, pid, started time) |
+
+#### Write endpoints (POST/PUT)
+
+| Endpoint | Description |
+|---|---|
+| `POST /api/tasks` | Create a task (`title`, `status`, `priority`, `tags`, `depends_on`) |
+| `PUT /api/tasks/:id` | Update a task (dependency-aware: 409 if deps unmet) |
+| `POST /api/tasks/:id/retry` | Retry a failed task |
+| `POST /api/conversations` | Log a conversation turn |
+| `POST /api/lessons` | Add a lesson (`lesson`, `category`, `severity`) |
+| `POST /api/memory/compress` | Archive completed tasks from MEMORY.md |
+| `POST /api/memory` | Write raw content to MEMORY.md |
+| `POST /api/soul` | Write soul.yaml content |
+| `POST /api/retry/run` | Trigger manual retry of failed tasks |
+| `POST /api/usage` | Log token usage entry |
+| `POST /api/inner-state` | Write inner.json (agent updates own state) |
+| `POST /api/self-model` | Write SELF.md content |
+| `POST /api/journal` | Append a journal entry |
+| `POST /api/tunnel/start` | Start Cloudflare tunnel - sends URL to user via Telegram when ready |
+
+#### Tunnel management
+
+The agent can start the Cloudflare tunnel remotely without host access:
+
+```bash
+# Start tunnel (non-blocking - sends URL via Telegram when ready)
+curl -s -X POST http://dashboard:7777/api/tunnel/start
+
+# Check current tunnel status
+curl -s http://dashboard:7777/api/tunnel
+```
+
+The start endpoint checks if a tunnel is already running (by PID), kills it if stale, then spawns a fresh cloudflared process. The URL is sent automatically via the gateway's `/api/deliver` endpoint once cloudflared reports it ready.
