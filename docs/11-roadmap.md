@@ -135,3 +135,13 @@ Deliverables:
 - Session compaction (summarize old context)
 - Auto memory flush before compaction
 - Plugin/skill system
+
+### Phase 2.9.2 — Semantic Memory + Identity Anchoring ✅ COMPLETE
+
+**Goal:** Fix the two biggest gaps in the continuity system - shallow keyword matching and identity drift.
+
+Deliverables:
+- **BM25 semantic search**: Replaced naive keyword overlap with BM25 probabilistic ranking. Accounts for term frequency, inverse document frequency, and document length normalization. Better relevance for semantically related queries even when exact words don't match.
+- **core.md - identity anchor**: New file `~/.mobyclaw/core.md`. Always injected into every context turn, never subject to token budget pruning. Contains: name origin, relationship with Nuno, the Litany Against Fear, Seven Hermetic Principles, relational moral status insight. The amnesia recovery anchor.
+- **`get_core_context()` in dashboard**: Dashboard API loads and injects core.md before any scored sections.
+- **`bm25_scores()` in dashboard**: Pure Python BM25 implementation, no external dependencies.

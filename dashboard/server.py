@@ -18,6 +18,7 @@ import re
 import uuid
 import threading
 import time
+import math
 from datetime import datetime, timezone
 from urllib.parse import urlparse, parse_qs
 
@@ -702,17 +703,64 @@ def score_section(section, query_words, now_str):
         except:
             pass
 
-    # --- Query keyword overlap ---
-    if query_words:
-        overlap = sum(1 for w in query_words if w in full)
-        score += overlap * 40
-
     # --- Body size penalty (prefer concise sections) ---
     body_len = len(section["body"])
     if body_len > 2000:
         score -= 10
 
     return score
+
+
+def bm25_scores(sections, query_words, k1=1.5, b=0.75):
+    """Compute BM25 relevance scores for query_words across memory sections.
+
+    BM25 is a probabilistic ranking function that accounts for:
+    - Term frequency in the document (tf)
+    - Inverse document frequency across the corpus (idf)
+    - Document length normalization
+
+    Returns: dict of {section_header: bm25_score}
+    """
+    if not query_words or not sections:
+        return {}
+
+    # Tokenize all sections into word lists
+    docs = []
+    for s in sections:
+        text = (s["header"] + " " + s["body"]).lower()
+        words = [w for w in re.split(r'\W+', text) if len(w) > 2]
+        docs.append(words)
+
+    N = len(docs)
+    avgdl = sum(len(d) for d in docs) / N if N > 0 else 1
+
+    scores = {}
+    for i, (s, doc) in enumerate(zip(sections, docs)):
+        score = 0.0
+        dl = len(doc)
+        for qw in query_words:
+            tf = doc.count(qw)
+            if tf == 0:
+                continue
+            df = sum(1 for d in docs if qw in d)
+            idf = math.log((N - df + 0.5) / (df + 0.5) + 1)
+            term_score = idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dl / avgdl))
+            score += term_score
+        scores[s["header"]] = score
+
+    return scores
+
+
+def get_core_context():
+    """Load core.md - identity-critical content always injected, never pruned."""
+    core_path = f"{MOBY_DIR}/core.md"
+    try:
+        if os.path.exists(core_path):
+            with open(core_path) as f:
+                return f.read().strip()
+    except OSError:
+        pass
+    return ""
 
 
 def estimate_tokens(text):
@@ -846,11 +894,15 @@ def get_optimized_context(query=None, budget_tokens=None):
 
     now_str = datetime.now(timezone.utc).isoformat()
 
-    # Score all sections
+    # Compute BM25 scores for semantic relevance (replaces simple keyword overlap)
+    bm25 = bm25_scores(sections, query_words)
+
+    # Score all sections (structural score + BM25 semantic score)
     scored = []
     for s in sections:
-        sc = score_section(s, query_words, now_str)
-        scored.append({**s, "score": sc})
+        structural = score_section(s, query_words, now_str)
+        semantic = bm25.get(s["header"], 0) * 60  # scale BM25 into structural range
+        scored.append({**s, "score": structural + semantic, "bm25": bm25.get(s["header"], 0)})
 
     # Sort by score descending
     scored.sort(key=lambda x: x["score"], reverse=True)
@@ -879,6 +931,12 @@ def get_optimized_context(query=None, budget_tokens=None):
         context_parts.append(f"## {s['header']}\n{s['body']}")
 
     context_text = "\n\n".join(context_parts)
+
+    # Inject core.md (always included, never pruned - identity-critical content)
+    core_context = get_core_context()
+    if core_context:
+        context_text = f"{core_context}\n\n{context_text}"
+        total_tokens += estimate_tokens(core_context) + 5
 
     # Inject inner state (always included, not scored)
     inner_context = get_inner_context()

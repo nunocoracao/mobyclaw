@@ -22,6 +22,9 @@ RUN ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "arm64" || echo "amd64") && \
 # Create app user
 RUN groupadd -r dashboard && useradd -r -g dashboard -m -d /home/dashboard dashboard
 
+# Install Python dependencies for semantic search
+RUN pip install --no-cache-dir openai numpy
+
 # Copy application
 COPY server.py /app/server.py
 COPY static/ /app/static/

@@ -50,22 +50,72 @@
 - Accessibility snapshots with aria-ref element targeting
 - Persistent browser context with 10min idle auto-close
 
-### Phase 3 — Workspace + Integrations
+### Phase 2.8 — Dashboard + Maintenance ✅ COMPLETE
 
-**Goal:** More messaging channels, integrations, and intelligence.
+**Goal:** Web dashboard for status, task management, and automated maintenance.
 
-- More messaging adapters (WhatsApp, Discord, Slack)
-- Notion integration via MCP (OAuth 2.0 + PKCE, chat-mediated auth)
+- **dashboard container**: Python 3.11 HTTP server with SQLite task database
+- **Web UI**: Status overview, task management, settings pages (with soul.yaml editor)
+- **Task API**: Full CRUD REST API with history, priorities, tags
+- **Task dependency chains**: `depends_on` field with execution-time blocking (409 if deps unmet)
+- **Auto-retry system**: Background thread retries failed tasks every 5 min (up to max_retries)
+- **Personality tuning**: Read/write soul.yaml via API + settings page editor
+- **Conversation indexing**: Gateway auto-logs every turn; search, filter, stats endpoints
+- **Lessons API**: Track lessons learned from experience (category, severity)
+- **Memory compression**: Archive completed tasks from MEMORY.md to dated files
+- **Self-healing boot**: Health checks and auto-fix on startup (`self-heal.sh`)
+- **Cloudflare tunnel**: Optional remote dashboard access via trycloudflare.com
+- **Context window optimizer**: Smart context injection - scores MEMORY.md sections by relevance and injects top sections within a token budget before each message
+
+### Phase 2.9 — Session Stability + Agent Inner Life ✅ COMPLETE
+
+**Goal:** Robust session management, agent continuity across resets, inner emotional life.
+
+- **Short-term memory (STM)**: Rolling buffer of last 20 exchanges, injected into new sessions
+- **Context optimizer**: Smart context injection (memory sections, inner state, self-model, explorations)
+- **Exploration heartbeats**: Every 4th heartbeat allows curiosity-driven web exploration
+- **Inner state + journal**: Agent maintains `inner.json` (mood, energy, preoccupations) and `journal/` entries
+- **Self-model**: Agent maintains `SELF.md` (who it thinks it is)
+- **Session turn limit**: Auto-rotate after 80 exchanges to prevent history corruption
+- **Stream error detection**: Detect corrupted sessions from SSE errors, auto-clear and retry
+- **Heartbeat failure tracking**: Pause heartbeats after 2 consecutive failures, resume on session change
+- **Double-processing fix**: Context fetch moved after `setBusy(true)` to eliminate race condition
+- **Telegram dedup**: Track last 50 message_ids to prevent re-processing
+- **Telegraf polling liveness**: Monitor and restart polling if it dies silently (5min threshold)
+- **mcp-bridge improvements**: Connection retry (3 attempts), tool call timeout (120s), graceful shutdown
+
+### Phase 2.9.1 — Dashboard + Tunnel Polish ✅ COMPLETE
+
+**Goal:** Agent self-service for tunnel management, dashboard API completeness.
+
+- **Agent-controlled tunnel start**: `POST /api/tunnel/start` - agent can start Cloudflare tunnel without host access. Delivers URL via Telegram automatically.
+- **Full dashboard API reference**: All GET/POST/PUT endpoints documented
+- **Tunnel status endpoint**: `GET /api/tunnel` returns current URL, PID, and start time
+
+### Phase 3 — Read-Only Integrations 🔜 PLANNED
+
+**Goal:** Agent can read from Slack, Notion, Gmail, and Google Calendar.
+
+- **Auth infrastructure**: Token store (encrypted), auth admin API, chat-mediated OAuth flow
+- **Notion** (4 tools): `notion_search`, `notion_page`, `notion_database`, `notion_list`
+- **Google** (7 tools): `gmail_inbox`, `gmail_read`, `gmail_search`, `gmail_labels`, `calendar_today`, `calendar_upcoming`, `calendar_search`
+- **Slack** (4 tools): `slack_channels`, `slack_history`, `slack_search`, `slack_profile`
+- **15 new MCP tools** (34 total)
+
+### Phase 4 — Workspace + More Channels
+
+**Goal:** Deeper workspace integration, more messaging channels.
+
+- More messaging adapters (Discord, WhatsApp, Slack)
 - Vector memory search (semantic recall over memory files)
 - Webhook ingress (GitHub events, etc.)
-- Web UI for management and chat
+- Conversation summarization and session compaction
 
-### Phase 4 — Production Hardening
+### Phase 5 — Production Hardening
 
 **Goal:** Ready for real 24/7 workloads.
 
 - Security hardening (seccomp, read-only root, network policy)
 - Monitoring and observability (logs, metrics, health checks)
 - Session compaction (summarize old context)
-- Auto memory flush before compaction
 - Plugin/skill system

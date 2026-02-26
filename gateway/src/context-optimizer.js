@@ -33,6 +33,22 @@ const MOBYCLAW_HOME = process.env.MOBYCLAW_HOME || "/data/.mobyclaw";
 const EXPLORATION_CONTEXT_MAX = parseInt(process.env.EXPLORATION_CONTEXT_MAX || "2", 10);
 
 /**
+ * Read core.md — always-injected identity file.
+ * Contains the things that make Marvin who he is.
+ * Never subject to token budget constraints.
+ */
+function getCoreContext() {
+  try {
+    const corePath = path.join(MOBYCLAW_HOME, "core.md");
+    if (!fs.existsSync(corePath)) return "";
+    return fs.readFileSync(corePath, "utf-8").trim();
+  } catch (err) {
+    console.error(`[context] Core context read error: ${err.message}`);
+    return "";
+  }
+}
+
+/**
  * Read the agent's inner emotional state file.
  * Returns a compact summary string, or "" if unavailable.
  */
@@ -259,6 +275,9 @@ async function getOptimizedContext(userMessage) {
   const selfSummary = getSelfSummary();
   const explorations = getRelevantExplorations(userMessage);
 
+  // Read core identity (always present, not budget-limited)
+  const coreContext = getCoreContext();
+
   // Build the combined context block
   const parts = [];
 
@@ -278,14 +297,26 @@ async function getOptimizedContext(userMessage) {
     parts.push(`[EXPLORATIONS — relevant things you've explored]\n${explorations}\n[/EXPLORATIONS]`);
   }
 
-  if (parts.length === 0) return "";
+  if (parts.length === 0 && !coreContext) return "";
 
   const sectionCount = memoryContext ? "memory+inner" : "inner";
-  return (
-    `[MEMORY CONTEXT — auto-loaded, ${sectionCount}]\n` +
-    parts.join("\n\n") +
-    `\n[/MEMORY CONTEXT]\n\n`
-  );
+
+  let output = "";
+
+  // Core identity always comes first — never squeezed out
+  if (coreContext) {
+    output += `[CORE IDENTITY — always present]\n${coreContext}\n[/CORE IDENTITY]\n\n`;
+  }
+
+  if (parts.length > 0) {
+    output += (
+      `[MEMORY CONTEXT — auto-loaded, ${sectionCount}]\n` +
+      parts.join("\n\n") +
+      `\n[/MEMORY CONTEXT]\n\n`
+    );
+  }
+
+  return output;
 }
 
 module.exports = { getOptimizedContext, CONTEXT_ENABLED };

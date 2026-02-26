@@ -479,8 +479,71 @@ GET /api/channels
 2. First known channel from `channels.json`
 3. `null` (schedule API returns 400, heartbeat skips delivery)
 
----
+### 6.11 Short-Term Memory (STM)
 
+Each time a cagent session resets (daily reset, turn limit, manual `/new`), all conversation history is lost. STM solves this by maintaining a rolling buffer of the last 20 exchanges that survives session rotations.
+
+**How it works:**
+
+1. After every agent turn, the gateway appends the user message and agent response to `~/.mobyclaw/short-term-memory.json`
+2. Each entry is capped at 1500 characters to control token cost
+3. Heartbeat and system messages are excluded
+4. When a new cagent session is created, the buffer is formatted as a `[SHORT-TERM MEMORY]` block and prepended to the first user message
+5. The injected block is stripped before saving back (prevents nesting across rotations)
+
+This gives the agent continuity across session resets without relying on the full conversation history.
+
+### 6.12 Context Optimizer
+
+Before every user message reaches the agent, the gateway enriches it with relevant context from the agent's memory files. This means the agent doesn't need to manually read MEMORY.md on every turn.
+
+**What gets injected:**
+
+- Relevant MEMORY.md sections (scored by keyword overlap with the user message)
+- Agent's current inner emotional state (`inner.json`)
+- Agent's self-model summary (`SELF.md`)
+- Relevant exploration summaries from `explorations/`
+
+**How it works:**
+
+1. Gateway calls `GET /api/context?query=<user_message>&budget=1500` on the dashboard
+2. Dashboard scores MEMORY.md sections by keyword overlap, recency, and status
+3. Returns top sections within the token budget as a `[MEMORY CONTEXT]` block
+4. Gateway prepends the block to the user message before sending to cagent
+5. If the dashboard is unreachable (3s timeout), processing continues without the block
+
+**Race condition prevention (ADR-062):** The context fetch happens AFTER `setBusy(true)`, not before. This prevents a window where a heartbeat or second message could sneak in while context was being fetched.
+
+### 6.13 Agent Inner Life
+
+The agent maintains a persistent inner life across conversations. This is infrastructure for continuity, not performance.
+
+**Files:**
+
+| File | Purpose |
+|---|---|
+| `~/.mobyclaw/state/inner.json` | Emotional/cognitive state: mood, energy, preoccupations, curiosity queue, recent events |
+| `~/.mobyclaw/SELF.md` | Self-model: who the agent thinks it is, what it values, open questions |
+| `~/.mobyclaw/journal/YYYY-MM-DD.md` | Daily journal: inner monologue, reflections, things explored |
+| `~/.mobyclaw/explorations/` | Curiosity-driven web research summaries |
+
+**Injection:** The context optimizer auto-injects `inner.json` and `SELF.md` summary into every turn via the `[INNER STATE]` and `[SELF]` blocks. The agent wakes up already knowing its mood and preoccupations.
+
+**Exploration heartbeats:** Every Nth heartbeat (default: every 4th, configurable via `EXPLORATION_FREQUENCY`) is an exploration heartbeat. Instead of a standard reflection, the agent picks a topic from its `curiosity_queue`, fetches a URL, reads it, and writes a summary to `explorations/`. Normal heartbeats are reflection-only (no web access, low cost).
+
+**Tunnel management:** The agent can start the Cloudflare tunnel remotely:
+
+```bash
+# Start tunnel (non-blocking - sends URL via Telegram when ready)
+curl -s -X POST http://dashboard:7777/api/tunnel/start
+
+# Check current tunnel status
+curl -s http://dashboard:7777/api/tunnel
+```
+
+The endpoint checks if a tunnel is already running (by PID), kills it if stale, then spawns a fresh cloudflared process. The URL is sent automatically via the gateway's `/api/deliver` endpoint.
+
+---
 
 ```
 Debian slim + cagent binary + common dev tools (git, curl, jq, etc.)

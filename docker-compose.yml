@@ -95,6 +95,7 @@ services:
       - DASHBOARD_PORT=7777
       - GATEWAY_URL=http://gateway:3000
       - ENABLE_TUNNEL=${ENABLE_TUNNEL:-false}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     depends_on:
       - gateway
     restart: unless-stopped

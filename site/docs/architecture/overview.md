@@ -40,19 +40,37 @@
 │  │  │  :8080 (cagent HTTP API)       │     │  :8081 MCP          │   ││
 │  │  └─────┬──────────────────┬───────┘     │  :3100 Admin        │   ││
 │  │        │                  │             └─────────────────────┘   ││
-│  │   ~/.mobyclaw/       /source                                       ││
-│  │   (bind mount)      (bind mount)                                   ││
+│  │                                                                    ││
+│  │  ┌────────────────────────────────┐                                ││
+│  │  │           dashboard            │                                ││
+│  │  │    (web UI + task API +        │                                ││
+│  │  │     maintenance scripts)       │                                ││
+│  │  │                                │                                ││
+│  │  │  📊 Status dashboard           │                                ││
+│  │  │  📋 Task API + dependency chains│                               ││
+│  │  │  🔄 Auto-retry (failed tasks)  │                                ││
+│  │  │  🧬 Soul.yaml editor           │                                ││
+│  │  │  🔧 Self-heal + boot scripts   │                                ││
+│  │  │  🔗 Cloudflare tunnel          │                                ││
+│  │  │  :7777 HTTP                    │                                ││
+│  │  └────────────────────────────────┘                                ││
+│  │                                                                    ││
+│  │   Bind mounts:                                                     ││
+│  │   ~/.mobyclaw/ ── user data (memory, tasks, schedules, credentials)││
+│  │   /source/     ── code (self-modification by moby only)            ││
+│  │   /workspace/* ── user projects (from workspaces.conf)             ││
 │  └───────────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Three Services
+### Four Services
 
 | Container | Role | Technology |
 |---|---|---|
 | **gateway** | Orchestrator — messaging adapters, sessions, heartbeat, scheduler, REST API | Node.js (Express) |
 | **moby** | AI brain — runs cagent, receives prompts, executes tools | cagent serve api |
 | **tool-gateway** | External tools — headless browser, web search, fetch, weather via MCP | Node.js + Playwright + Chromium |
+| **dashboard** | Web UI, task API (SQLite), personality editor, maintenance scripts, Cloudflare tunnel | Python 3.11 + cloudflared |
 
 ### 19 MCP Tools
 
@@ -98,13 +116,21 @@ The tool-gateway exposes tools to the agent via the MCP (Model Context Protocol)
                        │     │             │ Playwright +  │
               bind mounts:   │             │ Chromium      │
               ~/.mobyclaw/    /source       └───────────────┘
-              /workspace/*   (self-modification)
+              /workspace/*   (self-mod)
+
+                    ┌───────────────┐
+                    │   dashboard   │  web UI, task API, maintenance
+                    │   :7777       │  reads/writes ~/.mobyclaw/ data
+                    └───────────────┘
 ```
 
 | From → To | Protocol | How |
 |---|---|---|
 | gateway → moby | HTTP + SSE | POST to cagent API, streams response |
+| gateway → dashboard | HTTP | Context optimizer fetches relevant memory via `GET /api/context` |
 | moby → tool-gateway | MCP (stdio↔HTTP) | mcp-bridge bridges cagent's stdio MCP to tool-gateway's Streamable HTTP |
 | moby → filesystem | Direct | Built-in tools read/write bind-mounted dirs |
+| moby → dashboard | HTTP | Agent calls dashboard API via curl (tasks, lessons, memory, tunnel) |
+| moby → gateway | HTTP | Agent calls gateway API via curl (schedules, deliver) |
 | CLI → gateway | HTTP + SSE | `mobyclaw run` / `mobyclaw chat` hit gateway endpoints |
-| agent → gateway | HTTP | Agent calls gateway API via curl (schedules, deliver) |
+| dashboard → filesystem | Direct | Dashboard reads/writes `~/.mobyclaw/` data via bind mount |
