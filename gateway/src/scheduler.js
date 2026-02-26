@@ -151,8 +151,29 @@ function computeNextCron(after, cronExpr) {
 
     const [minSpec, hourSpec, , , dowSpec] = parts;
     const targetMin = minSpec === "*" ? 0 : parseInt(minSpec, 10);
-    const targetHour = hourSpec === "*" ? 0 : parseInt(hourSpec, 10);
     const allowedDays = parseDowSpec(dowSpec);
+
+    // Handle */N interval syntax for hours (e.g., "*/3" = every 3 hours)
+    const hourIntervalMatch = hourSpec.match(/^\*\/(\d+)$/);
+    if (hourIntervalMatch) {
+      const intervalHours = parseInt(hourIntervalMatch[1], 10);
+      const candidate = new Date(after);
+      // Advance by 1 hour increments until we find an aligned slot after `after`
+      for (let i = 0; i < 24 * 14; i++) {
+        candidate.setTime(candidate.getTime() + 60 * 60 * 1000);
+        candidate.setMinutes(targetMin, 0, 0);
+        if (
+          candidate > after &&
+          candidate.getHours() % intervalHours === 0 &&
+          (allowedDays === null || allowedDays.includes(candidate.getDay()))
+        ) {
+          return candidate.toISOString();
+        }
+      }
+      return null;
+    }
+
+    const targetHour = hourSpec === "*" ? 0 : parseInt(hourSpec, 10);
 
     const candidate = new Date(after);
     candidate.setDate(candidate.getDate() + 1);
