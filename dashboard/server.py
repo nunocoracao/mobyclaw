@@ -1247,6 +1247,29 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 with open(journal_path, "w") as f:
                     f.write(body.get("content", ""))
             self.send_json({"ok": True})
+        elif path == "/api/tunnel/start":
+            pid_file = f"{MOBY_DIR}/data/tunnel.pid"
+            # Check if already running
+            if os.path.exists(pid_file):
+                try:
+                    with open(pid_file) as f:
+                        pid = int(f.read().strip())
+                    os.kill(pid, 0)  # Check if process exists
+                    tunnel_info = f"{MOBY_DIR}/data/tunnel-info.json"
+                    if os.path.exists(tunnel_info):
+                        with open(tunnel_info) as f:
+                            info = json.load(f)
+                        self.send_json({"status": "already running", "url": info.get("url")})
+                    else:
+                        self.send_json({"status": "already running"})
+                    return
+                except (OSError, ValueError):
+                    pass  # Process dead, continue to start
+            # Start tunnel in background
+            script = "/app/scripts/start-tunnel.sh"
+            subprocess.Popen([script, MOBY_DIR, "7777"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.send_json({"status": "starting", "message": "Tunnel starting - URL will be sent via Telegram when ready"})
+
         else:
             self.send_json({"error": "Not found"}, 404)
 
