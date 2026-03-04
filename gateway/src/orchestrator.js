@@ -306,25 +306,100 @@ function stopCurrentRun(session) {
 }
 
 /**
+ * Strip injected context blocks from a message to get clean user text.
+ * Reuses the same patterns as short-term-memory.js.
+ */
+function stripContext(message) {
+  let clean = message;
+  // Remove [CORE IDENTITY ...] block
+  clean = clean.replace(/\[CORE IDENTITY[\s\S]*?\[\/CORE IDENTITY\]\s*/g, "");
+  // Remove [MEMORY CONTEXT ...] block
+  clean = clean.replace(/\[MEMORY CONTEXT[\s\S]*?\[\/MEMORY CONTEXT\]\s*/g, "");
+  // Remove [SHORT-TERM MEMORY ...] block
+  clean = clean.replace(/\[SHORT-TERM MEMORY[\s\S]*?\[\/SHORT-TERM MEMORY\]\s*/g, "");
+  // Remove [INNER STATE ...] block
+  clean = clean.replace(/\[INNER STATE[\s\S]*?\[\/INNER STATE\]\s*/g, "");
+  // Remove [SELF ...] block
+  clean = clean.replace(/\[SELF[\s\S]*?\[\/SELF\]\s*/g, "");
+  // Remove [EXPLORATIONS ...] block
+  clean = clean.replace(/\[EXPLORATIONS[\s\S]*?\[\/EXPLORATIONS\]\s*/g, "");
+  // Remove [PAST CONVERSATIONS ...] block
+  clean = clean.replace(/\[PAST CONVERSATIONS[\s\S]*?\[\/PAST CONVERSATIONS\]\s*/g, "");
+  // Remove [PROCEDURES ...] block
+  clean = clean.replace(/\[PROCEDURES[\s\S]*?\[\/PROCEDURES\]\s*/g, "");
+  // Remove [context: ...] line
+  clean = clean.replace(/^\[context:.*?\]\n/m, "");
+  // Remove collected message header
+  clean = clean.replace(/^\[\d+ messages were queued.*?combined:\]\s*/m, "");
+  return clean.trim();
+}
+
+/**
+ * Extract simple keywords/topics from text for search indexing.
+ * Returns up to 8 significant words.
+ */
+function extractKeywords(text) {
+  const stopWords = new Set([
+    "the", "and", "for", "are", "but", "not", "you", "all", "can", "had",
+    "her", "was", "one", "our", "out", "has", "have", "been", "some", "them",
+    "than", "this", "that", "what", "when", "how", "who", "which", "will",
+    "with", "from", "they", "would", "there", "their", "about", "could",
+    "other", "into", "more", "your", "just", "also", "very", "want", "need",
+    "know", "think", "look", "like", "going", "here", "okay", "right",
+    "thing", "things", "really", "something", "yeah", "sure", "well",
+    "let", "now", "get", "got", "don", "did", "does", "doing", "done",
+    "make", "made", "way", "back", "much", "still", "should",
+  ]);
+  const words = text.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(w => w.length >= 3 && !stopWords.has(w));
+
+  // Count frequency, return top 8
+  const freq = {};
+  for (const w of words) freq[w] = (freq[w] || 0) + 1;
+  return Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([w]) => w);
+}
+
+/**
  * Log a completed conversation turn to the dashboard API.
+ * Now stores clean text, extracted topics, and both sides of the conversation.
  * Fire-and-forget - never blocks the response flow.
  */
 function logConversation(channelId, userMessage, agentResponse, toolCount) {
   // Skip heartbeat/system messages
   if (channelId === "heartbeat" || channelId === "system") return;
+  if (channelId.startsWith("heartbeat:") || channelId.startsWith("schedule:")) return;
   // Skip empty exchanges
   if (!userMessage || !agentResponse) return;
+
+  const cleanUser = stripContext(userMessage);
+  if (!cleanUser) return;
 
   const snippet = (text, maxLen) =>
     text.length > maxLen ? text.slice(0, maxLen) + "..." : text;
 
+  // Build a useful summary from both sides
+  const summaryParts = [];
+  summaryParts.push(`User: ${snippet(cleanUser, 300)}`);
+  summaryParts.push(`Agent: ${snippet(agentResponse, 500)}`);
+  const summary = summaryParts.join("\n");
+
+  // Extract topics from the combined text
+  const topics = extractKeywords(cleanUser + " " + agentResponse);
+
   const payload = {
     timestamp: new Date().toISOString(),
     channel: channelId,
-    summary: snippet(userMessage, 200),
-    topics: [],
+    summary,
+    topics,
     key_facts: [],
     message_count: 1,
+    user_message: snippet(cleanUser, 2000),
+    agent_response: snippet(agentResponse, 2000),
   };
 
   fetch(`${DASHBOARD_URL}/api/conversations`, {

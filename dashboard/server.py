@@ -81,7 +81,9 @@ def init_db():
             summary TEXT NOT NULL,
             topics TEXT DEFAULT '[]',
             key_facts TEXT DEFAULT '[]',
-            message_count INTEGER DEFAULT 0
+            message_count INTEGER DEFAULT 0,
+            user_message TEXT DEFAULT '',
+            agent_response TEXT DEFAULT ''
         );
 
         CREATE INDEX IF NOT EXISTS idx_conv_topics ON conversations(topics);
@@ -119,6 +121,20 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_lessons_category ON lessons(category);
     """)
+
+    # Migration: add user_message and agent_response columns if missing
+    try:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(conversations)").fetchall()]
+        if "user_message" not in cols:
+            conn.execute("ALTER TABLE conversations ADD COLUMN user_message TEXT DEFAULT ''")
+            print("[db] Migrated: added user_message column to conversations")
+        if "agent_response" not in cols:
+            conn.execute("ALTER TABLE conversations ADD COLUMN agent_response TEXT DEFAULT ''")
+            print("[db] Migrated: added agent_response column to conversations")
+        conn.commit()
+    except Exception as e:
+        print(f"[db] Migration warning: {e}")
+
     conn.commit()
     conn.close()
 
@@ -408,15 +424,17 @@ def log_conversation(data):
     conn = get_db()
     now = datetime.now(timezone.utc).isoformat()
     conn.execute("""
-        INSERT INTO conversations (timestamp, channel, summary, topics, key_facts, message_count)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO conversations (timestamp, channel, summary, topics, key_facts, message_count, user_message, agent_response)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         data.get("timestamp", now),
         data.get("channel", ""),
         data.get("summary", ""),
         json.dumps(data.get("topics", [])),
         json.dumps(data.get("key_facts", [])),
-        data.get("message_count", 0)
+        data.get("message_count", 0),
+        data.get("user_message", ""),
+        data.get("agent_response", ""),
     ))
     conn.commit()
     conn.close()
@@ -424,11 +442,96 @@ def log_conversation(data):
 def search_conversations(query):
     conn = get_db()
     results = [dict(row) for row in conn.execute(
-        "SELECT * FROM conversations WHERE summary LIKE ? OR topics LIKE ? OR key_facts LIKE ? ORDER BY timestamp DESC LIMIT 20",
-        (f"%{query}%", f"%{query}%", f"%{query}%")
+        "SELECT * FROM conversations WHERE summary LIKE ? OR topics LIKE ? OR key_facts LIKE ? OR user_message LIKE ? OR agent_response LIKE ? ORDER BY timestamp DESC LIMIT 20",
+        (f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%")
     ).fetchall()]
     conn.close()
     return results
+
+
+def search_conversations_for_context(query, limit=5):
+    """Search past conversations and return compact results for context injection.
+    Uses keyword extraction + LIKE matching. Returns scored, deduplicated results."""
+    if not query:
+        return {"conversations": [], "count": 0}
+
+    # Extract significant keywords from query
+    stop_words = {
+        "the", "and", "for", "are", "but", "not", "you", "all", "can", "had",
+        "her", "was", "one", "our", "out", "has", "have", "been", "some", "them",
+        "than", "this", "that", "what", "when", "how", "who", "which", "will",
+        "with", "from", "they", "would", "there", "their", "about", "could",
+        "other", "into", "more", "your", "just", "also", "very", "want", "need",
+        "know", "think", "look", "like", "going", "here", "okay", "right",
+        "thing", "things", "really", "something", "yeah", "sure", "well",
+        "let", "now", "get", "got", "don", "did", "does", "doing", "done",
+        "make", "made", "way", "back", "much", "still", "should",
+    }
+    words = [
+        w for w in re.split(r'\W+', query.lower())
+        if len(w) >= 3 and w not in stop_words
+    ]
+
+    if not words:
+        return {"conversations": [], "count": 0}
+
+    conn = get_db()
+
+    # Search for each keyword independently, collect matching conversation IDs
+    matched = {}  # id -> {row, score}
+    for word in words[:6]:  # cap at 6 keywords
+        pattern = f"%{word}%"
+        rows = conn.execute(
+            """SELECT id, timestamp, channel, summary, topics, user_message, agent_response
+               FROM conversations
+               WHERE channel NOT LIKE 'heartbeat%' AND channel NOT LIKE 'schedule%'
+                 AND (summary LIKE ? OR topics LIKE ? OR user_message LIKE ? OR agent_response LIKE ?)
+               ORDER BY timestamp DESC LIMIT 20""",
+            (pattern, pattern, pattern, pattern)
+        ).fetchall()
+        for row in rows:
+            row = dict(row)
+            rid = row["id"]
+            if rid not in matched:
+                matched[rid] = {"row": row, "score": 0}
+            matched[rid]["score"] += 1  # more keyword matches = higher score
+
+    conn.close()
+
+    if not matched:
+        return {"conversations": [], "count": 0}
+
+    # Sort by score (more keyword matches) then by recency
+    ranked = sorted(
+        matched.values(),
+        key=lambda x: (x["score"], x["row"]["timestamp"]),
+        reverse=True
+    )
+
+    # Build compact results
+    results = []
+    for item in ranked[:limit]:
+        row = item["row"]
+        # Prefer user_message + agent_response if available, fall back to summary
+        user_msg = row.get("user_message", "") or ""
+        agent_resp = row.get("agent_response", "") or ""
+
+        # Truncate for context budget
+        if user_msg and agent_resp:
+            content = f"User: {user_msg[:300]}\nAgent: {agent_resp[:500]}"
+        else:
+            content = (row.get("summary", "") or "")[:600]
+
+        results.append({
+            "id": row["id"],
+            "timestamp": row["timestamp"],
+            "channel": row["channel"],
+            "content": content,
+            "topics": row.get("topics", "[]"),
+            "score": item["score"],
+        })
+
+    return {"conversations": results, "count": len(results)}
 
 # ─── Usage Tracking ─────────────────────────────────────────
 
@@ -1100,8 +1203,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             conn = get_db()
             if query:
                 results = [dict(row) for row in conn.execute(
-                    "SELECT * FROM conversations WHERE summary LIKE ? OR topics LIKE ? OR key_facts LIKE ? ORDER BY timestamp DESC LIMIT ?",
-                    (f"%{query}%", f"%{query}%", f"%{query}%", limit)
+                    "SELECT * FROM conversations WHERE summary LIKE ? OR topics LIKE ? OR key_facts LIKE ? OR user_message LIKE ? OR agent_response LIKE ? ORDER BY timestamp DESC LIMIT ?",
+                    (f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%", limit)
                 ).fetchall()]
             elif channel:
                 results = [dict(row) for row in conn.execute(
@@ -1195,6 +1298,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             query = params.get("query", [None])[0]
             budget = int(params.get("budget", [str(DEFAULT_CONTEXT_BUDGET)])[0])
             self.send_json(get_optimized_context(query, budget))
+
+        # Conversation RAG - search past conversations for context injection
+        elif path == "/api/context/conversations":
+            query = params.get("query", [None])[0]
+            limit = int(params.get("limit", ["5"])[0])
+            self.send_json(search_conversations_for_context(query, limit))
 
         # Usage API
         elif path == "/api/usage":

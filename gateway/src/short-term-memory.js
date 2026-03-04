@@ -54,14 +54,29 @@ function save(messages) {
  * just the actual user message.
  */
 function stripInjectedContext(message) {
-  // Remove [MEMORY CONTEXT ...] block (multiline)
+  // Remove [CORE IDENTITY ...] block
   let clean = message.replace(
+    /\[CORE IDENTITY[\s\S]*?\[\/CORE IDENTITY\]\s*/g,
+    ""
+  );
+  // Remove [MEMORY CONTEXT ...] block (multiline)
+  clean = clean.replace(
     /\[MEMORY CONTEXT[\s\S]*?\[\/MEMORY CONTEXT\]\s*/g,
     ""
   );
   // Remove [SHORT-TERM MEMORY ...] block (multiline) — don't nest history
   clean = clean.replace(
     /\[SHORT-TERM MEMORY[\s\S]*?\[\/SHORT-TERM MEMORY\]\s*/g,
+    ""
+  );
+  // Remove [PAST CONVERSATIONS ...] block
+  clean = clean.replace(
+    /\[PAST CONVERSATIONS[\s\S]*?\[\/PAST CONVERSATIONS\]\s*/g,
+    ""
+  );
+  // Remove [PROCEDURES ...] block
+  clean = clean.replace(
+    /\[PROCEDURES[\s\S]*?\[\/PROCEDURES\]\s*/g,
     ""
   );
   // Remove [context: ...] line

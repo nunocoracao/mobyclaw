@@ -31,6 +31,7 @@ const CONTEXT_BUDGET = parseInt(process.env.CONTEXT_BUDGET_TOKENS || "1500", 10)
 const CONTEXT_ENABLED = process.env.CONTEXT_OPTIMIZER !== "false"; // enabled by default
 const MOBYCLAW_HOME = process.env.MOBYCLAW_HOME || "/data/.mobyclaw";
 const EXPLORATION_CONTEXT_MAX = parseInt(process.env.EXPLORATION_CONTEXT_MAX || "2", 10);
+const PROCEDURE_CONTEXT_MAX = parseInt(process.env.PROCEDURE_CONTEXT_MAX || "3", 10);
 
 /**
  * Read core.md — always-injected identity file.
@@ -232,6 +233,136 @@ function getRelevantExplorations(userMessage) {
 }
 
 /**
+ * Find procedural memory files matching the user's message.
+ * Procedures are action-indexed recipe files with trigger phrases.
+ * Returns a compact string of matching procedures, or "" if none match.
+ */
+function getRelevantProcedures(userMessage) {
+  try {
+    const proceduresDir = path.join(MOBYCLAW_HOME, "procedures");
+    if (!fs.existsSync(proceduresDir)) return "";
+
+    const files = fs.readdirSync(proceduresDir)
+      .filter(f => f.endsWith(".md"));
+
+    if (files.length === 0) return "";
+
+    const msgLower = userMessage.toLowerCase();
+
+    // Score each procedure by trigger match
+    const scored = [];
+    for (const file of files) {
+      try {
+        const content = fs.readFileSync(
+          path.join(proceduresDir, file), "utf-8"
+        );
+
+        // Parse frontmatter triggers
+        const triggerMatch = content.match(/^triggers:\s*\[([^\]]+)\]/m);
+        if (!triggerMatch) continue;
+
+        // Parse the trigger array (simple quoted strings)
+        const triggers = triggerMatch[1]
+          .split(",")
+          .map(t => t.trim().replace(/["']/g, "").toLowerCase())
+          .filter(t => t.length > 0);
+
+        let score = 0;
+        for (const trigger of triggers) {
+          if (msgLower.includes(trigger)) {
+            // Exact phrase match - high score
+            score += 10 + trigger.length;
+          } else {
+            // Check individual trigger words
+            const triggerWords = trigger.split(/\s+/);
+            const matchedWords = triggerWords.filter(w => msgLower.includes(w));
+            if (matchedWords.length > 0 && matchedWords.length >= triggerWords.length * 0.5) {
+              score += matchedWords.length * 2;
+            }
+          }
+        }
+
+        if (score > 0) {
+          // Strip frontmatter, keep just the procedure body
+          let body = content;
+          if (content.startsWith("---")) {
+            const parts = content.split("---");
+            if (parts.length >= 3) {
+              body = parts.slice(2).join("---").trim();
+            }
+          }
+          scored.push({ file, body, score });
+        }
+      } catch { /* skip unreadable files */ }
+    }
+
+    if (scored.length === 0) return "";
+
+    scored.sort((a, b) => b.score - a.score);
+    const top = scored.slice(0, PROCEDURE_CONTEXT_MAX);
+
+    const summaries = top.map(({ body }) => body);
+    console.log(`[context] Matched ${top.length} procedure(s): ${top.map(p => p.file).join(", ")}`);
+    return summaries.join("\n\n---\n\n");
+  } catch (err) {
+    console.error(`[context] Procedure read error: ${err.message}`);
+    return "";
+  }
+}
+
+/**
+ * Search past conversations relevant to the user's message.
+ * Returns a compact string of relevant past exchanges, or "" if none found.
+ */
+async function getRelevantConversations(userMessage) {
+  try {
+    // Extract keywords for search
+    const stopWords = new Set([
+      "the", "and", "for", "are", "but", "not", "you", "all", "can", "had",
+      "her", "was", "one", "our", "out", "has", "have", "been", "some",
+      "them", "than", "this", "that", "what", "when", "how", "who", "which",
+      "will", "with", "from", "they", "would", "there", "their", "about",
+      "could", "other", "into", "more", "your", "just", "also", "very",
+      "want", "need", "know", "think", "look", "like", "going", "here",
+    ]);
+    const keywords = userMessage.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter(w => w.length >= 3 && !stopWords.has(w));
+
+    if (keywords.length === 0) return "";
+
+    const query = encodeURIComponent(keywords.slice(0, 8).join(" "));
+    const url = `${DASHBOARD_URL}/api/context/conversations?query=${query}&limit=3`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000); // 2s max
+
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    if (!res.ok) return "";
+
+    const data = await res.json();
+    if (!data.conversations || data.conversations.length === 0) return "";
+
+    // Format as context block
+    const entries = data.conversations.map(c => {
+      const date = c.timestamp ? c.timestamp.split("T")[0] : "unknown";
+      return `[${date}] ${c.content}`;
+    });
+
+    console.log(`[context] Found ${data.conversations.length} relevant past conversations`);
+    return entries.join("\n\n---\n\n");
+  } catch (err) {
+    if (err.name !== "AbortError") {
+      console.error(`[context] Conversation RAG error: ${err.message}`);
+    }
+    return "";
+  }
+}
+
+/**
  * Fetch optimized context for a user message.
  * Returns a string to prepend to the message, or "" on failure.
  */
@@ -274,6 +405,13 @@ async function getOptimizedContext(userMessage) {
   const innerState = getInnerState();
   const selfSummary = getSelfSummary();
   const explorations = getRelevantExplorations(userMessage);
+  const procedures = getRelevantProcedures(userMessage);
+
+  // Fetch relevant past conversations (async, with timeout)
+  let pastConversations = "";
+  try {
+    pastConversations = await getRelevantConversations(userMessage);
+  } catch { /* non-fatal */ }
 
   // Read core identity (always present, not budget-limited)
   const coreContext = getCoreContext();
@@ -295,6 +433,14 @@ async function getOptimizedContext(userMessage) {
 
   if (explorations) {
     parts.push(`[EXPLORATIONS — relevant things you've explored]\n${explorations}\n[/EXPLORATIONS]`);
+  }
+
+  if (pastConversations) {
+    parts.push(`[PAST CONVERSATIONS — relevant previous exchanges]\n${pastConversations}\n[/PAST CONVERSATIONS]`);
+  }
+
+  if (procedures) {
+    parts.push(`[PROCEDURES — action recipes, follow these steps]\n${procedures}\n[/PROCEDURES]`);
   }
 
   if (parts.length === 0 && !coreContext) return "";
