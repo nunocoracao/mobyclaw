@@ -26,7 +26,7 @@ RUN groupadd -r dashboard && useradd -r -g dashboard -m -d /home/dashboard dashb
 RUN pip install --no-cache-dir openai numpy
 
 # Copy application
-COPY server.py /app/server.py
+COPY server.py database.py services.py /app/
 COPY static/ /app/static/
 COPY scripts/ /app/scripts/
 COPY start.sh /app/start.sh
